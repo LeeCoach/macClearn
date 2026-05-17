@@ -1,0 +1,131 @@
+{
+  "": {
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/master.swiftdeps"
+  },
+  "/Users/leegz/macClearn/MacCleaner/App/MacCleanerApp.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MacCleanerApp.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MacCleanerApp.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MacCleanerApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MacCleanerApp.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MacCleanerApp.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Models/InstalledApp.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/InstalledApp.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/InstalledApp.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/InstalledApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/InstalledApp.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/InstalledApp.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Models/MemoryDetail.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryDetail.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryDetail.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryDetail~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryDetail.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryDetail.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Models/NavigationItem.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/NavigationItem.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/NavigationItem.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/NavigationItem~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/NavigationItem.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/NavigationItem.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Models/ProcessInfo.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ProcessInfo.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ProcessInfo.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ProcessInfo~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ProcessInfo.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ProcessInfo.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Models/ResidualFile.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ResidualFile.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ResidualFile.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ResidualFile~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ResidualFile.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ResidualFile.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Models/ScanResult.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ScanResult.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ScanResult.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ScanResult~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ScanResult.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ScanResult.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Services/AppUninstaller.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/AppUninstaller.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/AppUninstaller.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/AppUninstaller~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/AppUninstaller.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/AppUninstaller.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Services/DiskScanner.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskScanner.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskScanner.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskScanner~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskScanner.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskScanner.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Services/MemoryScanner.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryScanner.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryScanner.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryScanner~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryScanner.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryScanner.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Services/PermissionManager.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionManager.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionManager.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionManager.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionManager.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Services/SystemInfoService.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/SystemInfoService.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/SystemInfoService.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/SystemInfoService~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/SystemInfoService.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/SystemInfoService.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Views/ContentView.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ContentView.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ContentView.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/ContentView.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Views/DashboardView.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DashboardView.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DashboardView.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DashboardView~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DashboardView.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DashboardView.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Views/DiskView.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskView.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskView.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskView~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskView.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/DiskView.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Views/MemoryView.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryView.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryView.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryView~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryView.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/MemoryView.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Views/PermissionGuideView.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionGuideView.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionGuideView.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionGuideView~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionGuideView.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/PermissionGuideView.dia"
+  },
+  "/Users/leegz/macClearn/MacCleaner/Views/UninstallerView.swift": {
+    "dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/UninstallerView.d",
+    "object": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/UninstallerView.swift.o",
+    "swiftmodule": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/UninstallerView~partial.swiftmodule",
+    "swift-dependencies": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/UninstallerView.swiftdeps",
+    "diagnostics": "/Users/leegz/macClearn/.build/arm64-apple-macosx/debug/MacCleaner.build/UninstallerView.dia"
+  }
+}
