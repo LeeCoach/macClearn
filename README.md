@@ -6,12 +6,33 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/LeeCoach/macClearn/releases/latest">Download / 下载</a> ·
   <a href="#english">English</a> · <a href="#简体中文">简体中文</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/LeeCoach/macClearn/releases/download/v1.0.0/MacCleaner-1.0.0.dmg"><img src="https://img.shields.io/badge/macOS-13%2B-blue?style=flat-square&logo=apple" alt="macOS 13+"></a>
+  <a href="https://github.com/LeeCoach/macClearn/releases/latest"><img src="https://img.shields.io/github/v/release/LeeCoach/macClearn?style=flat-square" alt="Latest release"></a>
 </p>
 
 ---
 
 ## English
+
+### Download
+
+| Item | Link |
+|------|------|
+| **Latest release** | https://github.com/LeeCoach/macClearn/releases/latest |
+| **Installer (DMG)** | [MacCleaner-1.0.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.0.0/MacCleaner-1.0.0.dmg) (~860 KB) |
+| **Repository copy** | [`dist/MacCleaner-1.0.0.dmg`](dist/MacCleaner-1.0.0.dmg) |
+
+### Install
+
+1. Download **MacCleaner-1.0.0.dmg** from [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.0.0).
+2. Open the DMG, then drag **MacCleaner** into **Applications**.
+3. Launch MacCleaner from Applications. If macOS shows an unidentified-developer warning, open **System Settings → Privacy & Security** and choose **Open Anyway**.
+4. For disk cleanup, grant **Full Disk Access** when prompted (see [Permissions](#permissions) below).
 
 ### Overview
 
@@ -63,7 +84,7 @@ swift build -c release
 
 **Open in Xcode:** open the repository folder in Xcode (Swift Package). Scheme name: `MacCleaner`.
 
-A prebuilt app bundle may exist at `dist/MacCleaner.app` if you have built or copied one locally.
+Prebuilt artifacts in `dist/`: `MacCleaner-1.0.0.dmg` (installer) and `MacCleaner.app` (app bundle).
 
 ### Settings
 
@@ -85,7 +106,7 @@ macClearn/
 │   ├── Models/                # Data models & localization
 │   ├── Utilities/             # Assets helpers
 │   └── Resources/             # App icon asset catalog
-└── dist/                      # Optional packaged .app
+└── dist/                      # Release artifacts (.dmg, .app)
 ```
 
 ### Safety notes
@@ -107,6 +128,21 @@ macClearn/
 ---
 
 ## 简体中文
+
+### 下载安装包
+
+| 项目 | 链接 |
+|------|------|
+| **最新版本** | https://github.com/LeeCoach/macClearn/releases/latest |
+| **安装包（DMG）** | [MacCleaner-1.0.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.0.0/MacCleaner-1.0.0.dmg)（约 860 KB） |
+| **仓库内文件** | [`dist/MacCleaner-1.0.0.dmg`](dist/MacCleaner-1.0.0.dmg) |
+
+### 安装步骤
+
+1. 从 [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.0.0) 下载 **MacCleaner-1.0.0.dmg**。
+2. 打开镜像，将 **MacCleaner** 拖入 **应用程序** 文件夹。
+3. 从启动台或应用程序文件夹打开 MacCleaner。若提示「无法验证开发者」，请到 **系统设置 → 隐私与安全性** 选择 **仍要打开**。
+4. 使用磁盘清理前，按提示授予 **完全磁盘访问权限**（见下方 [权限说明](#权限说明)）。
 
 ### 项目简介
 
@@ -158,7 +194,7 @@ swift build -c release
 
 **使用 Xcode：** 用 Xcode 打开项目根目录（Swift Package），Scheme 名称为 `MacCleaner`。
 
-若本地已打包，可在 `dist/MacCleaner.app` 找到应用包。
+`dist/` 目录包含发布产物：`MacCleaner-1.0.0.dmg`（安装包）与 `MacCleaner.app`（应用包）。
 
 ### 设置项
 
@@ -180,7 +216,7 @@ macClearn/
 │   ├── Models/                # 数据模型与多语言
 │   ├── Utilities/             # 资源辅助
 │   └── Resources/             # 应用图标等资源
-└── dist/                      # 可选的 .app 发布目录
+└── dist/                      # 发布产物（.dmg、.app）
 ```
 
 ### 使用与安全提示
