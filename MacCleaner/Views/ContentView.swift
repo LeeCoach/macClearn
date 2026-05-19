@@ -10,6 +10,7 @@ struct ContentView: View {
     @StateObject private var diskScanner = DiskScanner()
     @StateObject private var memoryScanner = MemoryScanner()
     @StateObject private var appUninstaller = AppUninstaller()
+    @State private var didAutoScan = false
 
     var body: some View {
         NavigationSplitView {
@@ -64,12 +65,12 @@ struct ContentView: View {
         } detail: {
             // 使用 ZStack 叠加各页面，通过 opacity 控制显示切换
             ZStack {
-                DashboardView {
+                DashboardView(isActive: selectedItem == .dashboard) {
                     selectedItem = .disk
                 }
                 .opacity(selectedItem == .dashboard ? 1 : 0)
 
-                MemoryView(scanner: memoryScanner)
+                MemoryView(scanner: memoryScanner, isActive: selectedItem == .memory)
                     .opacity(selectedItem == .memory ? 1 : 0)
 
                 DiskView(scanner: diskScanner, isActive: selectedItem == .disk)
@@ -78,8 +79,8 @@ struct ContentView: View {
                 UninstallerView(viewModel: appUninstaller)
                     .opacity(selectedItem == .uninstaller ? 1 : 0)
 
-                // 磁盘页面缺少权限时显示权限引导遮罩
-                if selectedItem == .disk && !permissionManager.hasFullDiskAccess {
+                // 磁盘页面缺少权限且用户尝试操作时显示权限引导遮罩
+                if selectedItem == .disk && permissionManager.showPermissionGuide {
                     Color.black.opacity(0.4)
                         .ignoresSafeArea()
 
@@ -90,6 +91,14 @@ struct ContentView: View {
             }
         }
         .environmentObject(permissionManager)
+        .task {
+            if didAutoScan { return }
+            didAutoScan = true
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            if permissionManager.hasFullDiskAccess && !diskScanner.isScanning {
+                await diskScanner.scanDisk(excludedPaths: permissionManager.excludedPaths)
+            }
+        }
     }
 
     // 将字节数格式化为人类可读的大小字符串

@@ -1,9 +1,9 @@
-// DiskScanner.swift - 磁盘扫描与清理服务，按类别扫描可清理文件并支持选择性清理
+// DiskScanner.swift - 磁盘扫描与清理服务，按类别并发扫描可清理文件并支持选择性清理
 
 import Foundation
 import Combine
 
-/// 磁盘扫描器，按类别扫描磁盘文件（缓存、日志、临时文件等），支持清理和取消操作
+/// 磁盘扫描器，按类别并发扫描磁盘文件（缓存、日志、临时文件等），支持清理和取消操作
 class DiskScanner: ObservableObject {
     @Published var scanResults: [ScanCategory] = []
     @Published var isScanning: Bool = false
@@ -11,17 +11,30 @@ class DiskScanner: ObservableObject {
     @Published var totalCleanableSize: UInt64 = 0
     @Published var isCleaning: Bool = false
     @Published var cleanProgress: Double = 0.0
-    @Published var currentScanningPath: String = ""
-    @Published var currentScanningCategory: String = ""
+    @Published var hasCompletedScan: Bool = false
+    @Published var activeScanCount: Int = 0
+    @Published var scannedFileCount: Int = 0
+    @Published var activeCategoryTypes: Set<ScanCategoryType> = []
 
     private let fileManager = FileManager.default
     private var isCancelled = false
+    private var isScanCancelled = false
+    private var isCleanCancelled = false
     private var excludedPaths: [String] = []
-    private var lastScanProgressUpdate = Date.distantPast
-    private let scanProgressUpdateInterval: TimeInterval = 0.08
+    private var cleanedFileURLs: Set<URL> = []
 
     private var home: String {
         NSHomeDirectory()
+    }
+
+    private var persistenceURL: URL {
+        let dir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("MacCleaner_scanResults.json")
+    }
+
+    init() {
+        loadPersistedResults()
     }
 
     /// 各扫描类别对应的文件系统路径
@@ -31,6 +44,7 @@ class DiskScanner: ObservableObject {
             .logs: ["\(home)/Library/Logs", "/Library/Logs"],
             .tempFiles: ["/tmp", "/private/tmp"],
             .trash: ["\(home)/.Trash"],
+            .downloads: ["\(home)/Downloads"],
             .xcodeCache: [
                 "\(home)/Library/Developer/Xcode/DerivedData",
                 "\(home)/Library/Developer/Xcode/Archives",
@@ -47,11 +61,48 @@ class DiskScanner: ObservableObject {
 
     func cancelOperation() {
         isCancelled = true
+        isScanCancelled = true
+        isCleanCancelled = true
     }
 
-    /// 异步扫描磁盘，按类别逐个扫描并更新进度
+    func cancelScan() {
+        isScanCancelled = true
+    }
+
+    func cancelClean() {
+        isCleanCancelled = true
+    }
+
+    private func saveScanResults() {
+        do {
+            let data = try JSONEncoder().encode(scanResults)
+            try data.write(to: persistenceURL, options: .atomic)
+        } catch {
+            print("Failed to save scan results: \(error)")
+        }
+    }
+
+    private func loadPersistedResults() {
+        guard let data = try? Data(contentsOf: persistenceURL),
+              let results = try? JSONDecoder().decode([ScanCategory].self, from: data) else { return }
+        let types = ScanCategoryType.allCases
+        var loaded = results
+        loaded.sort {
+            guard let a = types.firstIndex(of: $0.categoryType),
+                  let b = types.firstIndex(of: $1.categoryType) else { return false }
+            return a < b
+        }
+        scanResults = loaded
+        totalCleanableSize = loaded
+            .filter { $0.categoryType.isCleanable }
+            .reduce(0) { $0 + $1.totalSize }
+        hasCompletedScan = true
+    }
+
+    /// 并发扫描磁盘，所有分类同时启动，实时反馈文件计数和中间结果
     func scanDisk(excludedPaths: [String] = []) async {
         isCancelled = false
+        isScanCancelled = false
         self.excludedPaths = excludedPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
 
         await MainActor.run {
@@ -59,76 +110,98 @@ class DiskScanner: ObservableObject {
             scanProgress = 0.0
             scanResults = []
             totalCleanableSize = 0
-            currentScanningPath = ""
-            currentScanningCategory = ""
+            hasCompletedScan = false
+            activeScanCount = 0
+            scannedFileCount = 0
+            activeCategoryTypes = []
+            cleanedFileURLs = []
         }
-        lastScanProgressUpdate = .distantPast
 
         let types = ScanCategoryType.allCases
-        let total = Double(types.count)
-        var results: [ScanCategory] = []
 
-        for (index, type) in types.enumerated() {
-            if isCancelled {
-                let currentResults = results
-                await MainActor.run {
-                    scanResults = currentResults
-                    currentScanningPath = ""
-                    currentScanningCategory = ""
-                    isScanning = false
+        await withTaskGroup(of: ScanCategory.self) { group in
+            for type in types {
+                group.addTask { [weak self] in
+                    guard let self else { return ScanCategory(categoryType: type) }
+                    if self.isScanCancelled { return ScanCategory(categoryType: type) }
+
+                    await MainActor.run {
+                        self.activeScanCount += 1
+                        self.activeCategoryTypes.insert(type)
+                    }
+
+                    let category: ScanCategory
+                    if type == .largeFiles {
+                        category = await self.scanLargeFiles(type)
+                    } else {
+                        category = await self.scanCategory(type)
+                    }
+
+                    await MainActor.run {
+                        self.activeScanCount = max(0, self.activeScanCount - 1)
+                        self.activeCategoryTypes.remove(type)
+                    }
+
+                    return category
                 }
-                return
             }
 
-            await MainActor.run {
-                currentScanningCategory = type.titleKey
-                scanProgress = Double(index) / total
-            }
+            for await category in group {
+                if isScanCancelled {
+                    group.cancelAll()
+                }
 
-            let category = await scanCategory(
-                type,
-                baseProgress: Double(index) / total,
-                categoryWeight: 1.0 / total
-            )
-            results.append(category)
-
-            let currentResults = results
-            let currentTotalCleanableSize = currentResults
-                .filter { $0.categoryType.isCleanable }
-                .reduce(0) { $0 + $1.totalSize }
-            await MainActor.run {
-                scanProgress = Double(index + 1) / total
-                scanResults = currentResults
-                totalCleanableSize = currentTotalCleanableSize
+                await MainActor.run {
+                    let filteredFiles = category.files.filter { !cleanedFileURLs.contains($0.url) }
+                    let filteredTotalSize = filteredFiles.reduce(UInt64(0)) { $0 + $1.size }
+                    let finalCategory = ScanCategory(
+                        categoryType: category.categoryType,
+                        totalSize: filteredTotalSize,
+                        fileCount: filteredFiles.count,
+                        files: filteredFiles
+                    )
+                    if let index = scanResults.firstIndex(where: { $0.categoryType == finalCategory.categoryType }) {
+                        scanResults[index] = finalCategory
+                    } else {
+                        scanResults.append(finalCategory)
+                    }
+                    scanResults.sort {
+                        guard let a = types.firstIndex(of: $0.categoryType),
+                              let b = types.firstIndex(of: $1.categoryType) else { return false }
+                        return a < b
+                    }
+                    totalCleanableSize = scanResults
+                        .filter { $0.categoryType.isCleanable }
+                        .reduce(0) { $0 + $1.totalSize }
+                }
             }
         }
 
-        let finalResults = results
         await MainActor.run {
-            scanResults = finalResults
-            currentScanningPath = ""
-            currentScanningCategory = ""
             isScanning = false
+            scanProgress = 1.0
+            hasCompletedScan = true
+            activeScanCount = 0
         }
+        saveScanResults()
     }
 
-    /// 扫描指定类别的文件，遍历目录并统计大小和文件列表
-    private func scanCategory(_ type: ScanCategoryType, baseProgress: Double, categoryWeight: Double) async -> ScanCategory {
+    private static let batchFileThreshold = 50
+    private static let batchTimeThreshold: TimeInterval = 0.3
+
+    /// 扫描指定类别的文件，每 50 个或每 0.3 秒推送中间结果到 UI
+    private func scanCategory(_ type: ScanCategoryType) async -> ScanCategory {
         var category = ScanCategory(categoryType: type)
         guard let paths = categoryPaths[type] else { return category }
 
-        // 大文件类别使用独立的扫描逻辑（基于阈值过滤）
-        if type == .largeFiles {
-            return await scanLargeFiles(in: paths, baseProgress: baseProgress, categoryWeight: categoryWeight)
-        }
-
         var totalSize: UInt64 = 0
         var fileCount = 0
-        var scannedItems = 0
         var files: [ScanFileItem] = []
+        var lastBatchCount = 0
+        var lastBatchTime = Date.distantPast
 
         for path in paths {
-            if isCancelled { break }
+            if isScanCancelled { break }
             if isPathExcluded(path) { continue }
 
             let url = URL(fileURLWithPath: path)
@@ -140,18 +213,11 @@ class DiskScanner: ObservableObject {
             ) else { continue }
 
             for case let fileURL as URL in enumerator {
-                if isCancelled { break }
-                scannedItems += 1
-                await updateScanProgress(
-                    baseProgress: baseProgress,
-                    categoryWeight: categoryWeight,
-                    scannedItems: scannedItems,
-                    currentPath: fileURL.path
-                )
+                if isScanCancelled { break }
+
                 do {
                     let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
                     if resourceValues.isDirectory == true {
-                        // 如果目录本身被排除，跳过其所有子项
                         if isPathExcluded(fileURL.path) {
                             enumerator.skipDescendants()
                         }
@@ -162,11 +228,29 @@ class DiskScanner: ObservableObject {
                     let fileSize = UInt64(resourceValues.fileSize ?? 0)
                     totalSize += fileSize
                     fileCount += 1
-
                     files.append(ScanFileItem(url: fileURL, size: fileSize, isProtected: false))
+
+                    let newFiles = fileCount - lastBatchCount
+                    let now = Date()
+                    if newFiles >= Self.batchFileThreshold || now.timeIntervalSince(lastBatchTime) >= Self.batchTimeThreshold {
+                        lastBatchCount = fileCount
+                        lastBatchTime = now
+                        let snapshot = ScanCategory(categoryType: type, totalSize: totalSize, fileCount: fileCount, files: files)
+                        await MainActor.run {
+                            self.scannedFileCount += newFiles
+                            self.publishIntermediate(snapshot)
+                        }
+                    }
                 } catch {
                     continue
                 }
+            }
+        }
+
+        let remaining = fileCount - lastBatchCount
+        if remaining > 0 {
+            await MainActor.run {
+                self.scannedFileCount += remaining
             }
         }
 
@@ -176,24 +260,26 @@ class DiskScanner: ObservableObject {
         return category
     }
 
-    /// 扫描大文件（≥100MB），跳过 Library 和废纸篓等系统目录
-    private func scanLargeFiles(in paths: [String], baseProgress: Double, categoryWeight: Double) async -> ScanCategory {
-        var category = ScanCategory(categoryType: .largeFiles)
-        // 大文件阈值：100MB
+    /// 扫描大文件（≥100MB），每 50 个或每 0.3 秒推送中间结果到 UI
+    private func scanLargeFiles(_ type: ScanCategoryType) async -> ScanCategory {
+        var category = ScanCategory(categoryType: type)
+        guard let paths = categoryPaths[type] else { return category }
+
         let threshold: UInt64 = 100 * 1024 * 1024
 
         var files: [ScanFileItem] = []
         var totalSize: UInt64 = 0
-        var scannedItems = 0
+        var scannedCount = 0
+        var lastBatchCount = 0
+        var lastBatchTime = Date.distantPast
 
-        // 大文件扫描时跳过这些目录前缀（避免扫描 Library 等系统目录）
         let skipDirectoryPrefixes = [
             "\(home)/Library",
             "\(home)/.Trash"
         ]
 
         for path in paths {
-            if isCancelled { break }
+            if isScanCancelled { break }
             if isPathExcluded(path) { continue }
 
             let url = URL(fileURLWithPath: path)
@@ -205,14 +291,8 @@ class DiskScanner: ObservableObject {
             ) else { continue }
 
             for case let item as URL in enumerator {
-                if isCancelled { break }
-                scannedItems += 1
-                await updateScanProgress(
-                    baseProgress: baseProgress,
-                    categoryWeight: categoryWeight,
-                    scannedItems: scannedItems,
-                    currentPath: item.path
-                )
+                if isScanCancelled { break }
+
                 do {
                     let resourceValues = try item.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
 
@@ -222,6 +302,20 @@ class DiskScanner: ObservableObject {
                             enumerator.skipDescendants()
                         }
                         continue
+                    }
+
+                    scannedCount += 1
+
+                    let newFilesCount = scannedCount - lastBatchCount
+                    let now = Date()
+                    if newFilesCount >= Self.batchFileThreshold || now.timeIntervalSince(lastBatchTime) >= Self.batchTimeThreshold {
+                        lastBatchCount = scannedCount
+                        lastBatchTime = now
+                        let snapshot = ScanCategory(categoryType: type, totalSize: totalSize, fileCount: files.count, files: files)
+                        await MainActor.run {
+                            self.scannedFileCount += newFilesCount
+                            self.publishIntermediate(snapshot)
+                        }
                     }
 
                     if isPathExcluded(item.path) || isProtectedPath(item.path) { continue }
@@ -237,6 +331,13 @@ class DiskScanner: ObservableObject {
             }
         }
 
+        let remaining = scannedCount - lastBatchCount
+        if remaining > 0 {
+            await MainActor.run {
+                self.scannedFileCount += remaining
+            }
+        }
+
         files.sort { $0.size > $1.size }
 
         category.totalSize = totalSize
@@ -245,27 +346,32 @@ class DiskScanner: ObservableObject {
         return category
     }
 
-    /// 在单个扫描分类内部提供平滑进度。目录总文件数未知，因此使用渐进估算并在分类结束时由调用方校准到精确进度。
-    private func updateScanProgress(
-        baseProgress: Double,
-        categoryWeight: Double,
-        scannedItems: Int,
-        currentPath: String
-    ) async {
-        let now = Date()
-        guard now.timeIntervalSince(lastScanProgressUpdate) >= scanProgressUpdateInterval else { return }
-        lastScanProgressUpdate = now
+    /// 将扫描中间结果发布到 scanResults 列表，过滤掉并发清理中已删除的文件
+    private func publishIntermediate(_ category: ScanCategory) {
+        let filteredFiles = category.files.filter { !cleanedFileURLs.contains($0.url) }
+        let filteredTotalSize = filteredFiles.reduce(UInt64(0)) { $0 + $1.size }
+        var filtered = category
+        filtered.files = filteredFiles
+        filtered.fileCount = filteredFiles.count
+        filtered.totalSize = filteredTotalSize
 
-        let itemProgress = min(0.92, Double(scannedItems) / Double(scannedItems + 600))
-        let progress = min(baseProgress + categoryWeight * itemProgress, baseProgress + categoryWeight * 0.92)
-
-        await MainActor.run {
-            currentScanningPath = currentPath
-            scanProgress = max(scanProgress, progress)
+        if let index = scanResults.firstIndex(where: { $0.categoryType == category.categoryType }) {
+            scanResults[index] = filtered
+        } else {
+            scanResults.append(filtered)
         }
+        let types = ScanCategoryType.allCases
+        scanResults.sort {
+            guard let a = types.firstIndex(of: $0.categoryType),
+                  let b = types.firstIndex(of: $1.categoryType) else { return false }
+            return a < b
+        }
+        totalCleanableSize = scanResults
+            .filter { $0.categoryType.isCleanable }
+            .reduce(0) { $0 + $1.totalSize }
     }
 
-    /// 判断路径是否属于受保护的系统目录（用户主目录外的 /Library、/System、/private/var）
+    /// 判断路径是否属于受保护的系统目录
     private func isProtectedPath(_ path: String) -> Bool {
         if path.hasPrefix(home) {
             return false
@@ -274,7 +380,7 @@ class DiskScanner: ObservableObject {
         return systemPrefixes.contains { path.hasPrefix($0) }
     }
 
-    /// 判断路径是否在用户排除列表中（精确匹配或前缀匹配）
+    /// 判断路径是否在用户排除列表中
     private func isPathExcluded(_ path: String) -> Bool {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
         return excludedPaths.contains { excludedPath in
@@ -282,59 +388,89 @@ class DiskScanner: ObservableObject {
         }
     }
 
-    /// 清理选中的类别文件，废纸篓中的文件直接删除，其余移入废纸篓
-    func cleanCategories(_ selected: Set<ScanCategoryType>, excludedPaths: [String] = []) async -> UInt64 {
+    /// 并行清理选中的类别文件和单独文件
+    func cleanCategories(_ selected: Set<ScanCategoryType>, selectedFiles: Set<URL> = [], excludedPaths: [String] = []) async -> UInt64 {
         isCancelled = false
+        isCleanCancelled = false
         self.excludedPaths = excludedPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
-        var cleanedSize: UInt64 = 0
-        var cleanedURLs: Set<URL> = []
 
         let categoriesToClean = scanResults.filter { selected.contains($0.categoryType) && $0.categoryType.isCleanable }
-        let totalFiles = categoriesToClean.reduce(0) { total, category in
-            total + category.files.filter { !$0.isProtected && !isPathExcluded($0.url.path) }.count
+        let categoryFileURLs = Set(categoriesToClean.flatMap { $0.files.map { $0.url } })
+
+        var tasks: [(url: URL, size: UInt64, isTrash: Bool)] = []
+
+        for category in categoriesToClean {
+            for file in category.files {
+                if file.isProtected || isPathExcluded(file.url.path) { continue }
+                tasks.append((file.url, file.size, category.categoryType == .trash))
+            }
         }
-        var processedFiles = 0
+
+        for url in selectedFiles.subtracting(categoryFileURLs) {
+            if isPathExcluded(url.path) || isProtectedPath(url.path) { continue }
+            let parentCategory = scanResults.first { $0.files.contains { $0.url == url } }
+            let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
+            let size = UInt64(resourceValues?.fileSize ?? 0)
+            tasks.append((url, size, parentCategory?.categoryType == .trash))
+        }
+
+        let totalFiles = tasks.count
 
         await MainActor.run {
             isCleaning = true
             cleanProgress = 0.0
         }
 
-        for category in categoriesToClean {
-            if isCancelled { break }
-
-            for file in category.files {
-                if isCancelled { break }
-                if file.isProtected || isPathExcluded(file.url.path) { continue }
-                do {
-                    if category.categoryType == .trash {
-                        // 废纸篓中的文件直接彻底删除
-                        try fileManager.removeItem(at: file.url)
-                    } else {
-                        // 其他类别的文件移入废纸篓
-                        var resultURL: NSURL?
-                        try fileManager.trashItem(at: file.url, resultingItemURL: &resultURL)
+        let cleaned = await withTaskGroup(of: (UInt64, URL).self) { group in
+            for task in tasks {
+                if isCleanCancelled { break }
+                group.addTask {
+                    do {
+                        if task.isTrash {
+                            try FileManager.default.removeItem(at: task.url)
+                        } else {
+                            var resultURL: NSURL?
+                            try FileManager.default.trashItem(at: task.url, resultingItemURL: &resultURL)
+                        }
+                        return (task.size, task.url)
+                    } catch {
+                        return (0, task.url)
                     }
-                    cleanedSize += file.size
-                    cleanedURLs.insert(file.url)
-                } catch {
-                    continue
-                }
-                processedFiles += 1
-                await MainActor.run {
-                    cleanProgress = totalFiles > 0 ? Double(processedFiles) / Double(totalFiles) : 0
                 }
             }
+
+            var cleanedSize: UInt64 = 0
+            var cleanedURLs: Set<URL> = []
+            var count = 0
+            for await (size, url) in group {
+                if size > 0 {
+                    cleanedSize += size
+                    cleanedURLs.insert(url)
+                }
+                count += 1
+                let c = count
+                let t = totalFiles
+                await MainActor.run {
+                    cleanProgress = t > 0 ? Double(c) / Double(t) : 0
+                }
+                if isCleanCancelled {
+                    group.cancelAll()
+                }
+            }
+            return (cleanedSize, cleanedURLs)
         }
 
+        let (cleanedSize, cleanedURLs) = cleaned
+
+        let urls = cleanedURLs
         await MainActor.run {
             isCleaning = false
             cleanProgress = 0.0
-            // 清理完成后更新扫描结果，移除已清理的文件
+            cleanedFileURLs.formUnion(urls)
             scanResults = scanResults.map { category in
                 var updated = category
-                if selected.contains(updated.categoryType) && updated.categoryType.isCleanable && !isCancelled {
-                    updated.files.removeAll { cleanedURLs.contains($0.url) }
+                if !isCleanCancelled {
+                    updated.files.removeAll { urls.contains($0.url) }
                     updated.fileCount = updated.files.count
                     updated.totalSize = updated.files.reduce(0) { $0 + $1.size }
                 }

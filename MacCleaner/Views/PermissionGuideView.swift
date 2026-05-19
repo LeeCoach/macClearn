@@ -10,6 +10,21 @@ struct PermissionGuideView: View {
 
     var body: some View {
         VStack(spacing: 24) {
+            HStack {
+                Spacer()
+                Button(action: {
+                    permissionManager.hidePermissionGuide()
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color(NSColor.controlBackgroundColor)))
+                }
+                .buttonStyle(.plain)
+                .help(localization.text("common.close"))
+            }
+
             Image(systemName: "lock.shield")
                 .font(.system(size: 56))
                 .foregroundStyle(.orange)

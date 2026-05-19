@@ -9,4 +9,8 @@ struct ResidualFile: Identifiable {
     let name: String
     let size: UInt64
     let isProtected: Bool
+
+    var isSelectedByDefault: Bool {
+        !isProtected
+    }
 }

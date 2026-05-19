@@ -7,10 +7,12 @@ struct DashboardView: View {
     @EnvironmentObject private var localization: LocalizationManager
     @StateObject private var systemInfo = SystemInfoService()
     @State private var showEmptyTrashConfirmation = false
+    let isActive: Bool
     // 点击"扫描磁盘"时的回调，用于切换到磁盘页面
     let onScanDisk: () -> Void
 
-    init(onScanDisk: @escaping () -> Void = {}) {
+    init(isActive: Bool = false, onScanDisk: @escaping () -> Void = {}) {
+        self.isActive = isActive
         self.onScanDisk = onScanDisk
     }
 
@@ -36,8 +38,17 @@ struct DashboardView: View {
                 .transition(.opacity)
             }
         }
+        .onChange(of: isActive) { active in
+            if active {
+                systemInfo.startMonitoring()
+            } else {
+                systemInfo.stopMonitoring()
+            }
+        }
         .onAppear {
-            systemInfo.startMonitoring()
+            if isActive {
+                systemInfo.startMonitoring()
+            }
         }
         .onDisappear {
             systemInfo.stopMonitoring()

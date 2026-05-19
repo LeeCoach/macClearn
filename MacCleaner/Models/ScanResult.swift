@@ -3,11 +3,12 @@
 import Foundation
 
 /// 扫描分类类型，定义可扫描的文件类别
-enum ScanCategoryType: String, CaseIterable, Identifiable {
+enum ScanCategoryType: String, CaseIterable, Identifiable, Codable {
     case caches
     case logs
     case tempFiles
     case trash
+    case downloads
     case xcodeCache
     case browserCache
     case largeFiles
@@ -20,6 +21,7 @@ enum ScanCategoryType: String, CaseIterable, Identifiable {
         case .logs: return "category.logs"
         case .tempFiles: return "category.tempFiles"
         case .trash: return "category.trash"
+        case .downloads: return "category.downloads"
         case .xcodeCache: return "category.xcodeCache"
         case .browserCache: return "category.browserCache"
         case .largeFiles: return "category.largeFiles"
@@ -33,6 +35,7 @@ enum ScanCategoryType: String, CaseIterable, Identifiable {
         case .logs: return "doc.text"
         case .tempFiles: return "thermometer"
         case .trash: return "trash"
+        case .downloads: return "arrow.down.circle"
         case .xcodeCache: return "hammer"
         case .browserCache: return "globe"
         case .largeFiles: return "doc.fill"
@@ -46,20 +49,23 @@ enum ScanCategoryType: String, CaseIterable, Identifiable {
 }
 
 /// 扫描分类，包含某类文件的总大小、文件列表及展开状态
-struct ScanCategory: Identifiable {
-    let id = UUID()
+struct ScanCategory: Identifiable, Codable {
+    var id: String { categoryType.rawValue }
     let categoryType: ScanCategoryType
-    let name: String
-    let icon: String
     var totalSize: UInt64
     var fileCount: Int
     var files: [ScanFileItem]
-    var isExpanded: Bool
+
+    var name: String { categoryType.titleKey }
+    var icon: String { categoryType.icon }
+    var isExpanded: Bool = false
+
+    private enum CodingKeys: String, CodingKey {
+        case categoryType, totalSize, fileCount, files
+    }
 
     init(categoryType: ScanCategoryType, totalSize: UInt64 = 0, fileCount: Int = 0, files: [ScanFileItem] = [], isExpanded: Bool = false) {
         self.categoryType = categoryType
-        self.name = categoryType.titleKey
-        self.icon = categoryType.icon
         self.totalSize = totalSize
         self.fileCount = fileCount
         self.files = files
@@ -73,11 +79,15 @@ struct ScanCategory: Identifiable {
 }
 
 /// 扫描到的单个文件项
-struct ScanFileItem: Identifiable {
-    let id = UUID()
+struct ScanFileItem: Identifiable, Codable {
+    var id: URL { url }
     let url: URL
     let size: UInt64
     let isProtected: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case url, size, isProtected
+    }
 }
 
 /// 将字节数格式化为人类可读的大小字符串（如 "1.5 GB"）

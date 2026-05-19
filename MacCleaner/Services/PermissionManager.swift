@@ -20,27 +20,27 @@ class PermissionManager: ObservableObject {
         loadExcludedPaths()
     }
 
-    /// 检测是否拥有完全磁盘访问权限，通过尝试读取受 TCC 保护的目录来判断
+    /// 检测是否拥有完全磁盘访问权限，通过尝试读取多个受 TCC 保护的目录来判断
     func checkFullDiskAccess() {
-        // 尝试读取 TCC 数据库目录，该目录受完全磁盘访问权限保护
-        let testPath = "/Library/Application Support/com.apple.TCC"
         let fm = FileManager.default
-
-        if fm.fileExists(atPath: testPath) {
-            if fm.isReadableFile(atPath: testPath) {
-                hasFullDiskAccess = true
-            } else {
-                hasFullDiskAccess = false
-            }
-        } else {
-            // 备用检测：尝试读取 Safari 目录
-            let testPath2 = NSHomeDirectory() + "/Library/Safari"
-            hasFullDiskAccess = fm.isReadableFile(atPath: testPath2)
+        let protectedPaths = [
+            "/Library/Application Support/com.apple.TCC",
+            NSHomeDirectory() + "/Library/Safari",
+            NSHomeDirectory() + "/Library/Messages",
+            NSHomeDirectory() + "/Library/Mail"
+        ]
+        
+        hasFullDiskAccess = protectedPaths.contains { path in
+            fm.fileExists(atPath: path) && fm.isReadableFile(atPath: path)
         }
 
-        if !hasFullDiskAccess {
-            showPermissionGuide = true
+        if hasFullDiskAccess {
+            showPermissionGuide = false
         }
+    }
+
+    func hidePermissionGuide() {
+        showPermissionGuide = false
     }
 
     /// 打开系统偏好设置的隐私与安全性页面

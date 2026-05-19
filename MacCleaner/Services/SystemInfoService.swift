@@ -21,7 +21,9 @@ class SystemInfoService: ObservableObject {
 
     /// 启动定时监控，每 3 秒刷新一次
     func startMonitoring() {
-        isLoading = true
+        if memoryTotal == 0 {
+            isLoading = true
+        }
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
             self?.refresh()
@@ -40,11 +42,14 @@ class SystemInfoService: ObservableObject {
             self.readMemoryInfo()
             self.readDiskInfo()
             self.readCPUUsage()
-            self.estimateCleanable()
 
+            // 先释放界面，让仪表盘立即展示已有数据
             DispatchQueue.main.async {
                 self.isLoading = false
             }
+
+            // 可清理空间估算可能很慢（遍历数十万文件），放在后面异步完成
+            self.estimateCleanable()
         }
     }
 
@@ -106,13 +111,23 @@ class SystemInfoService: ObservableObject {
         // -l 1: 只采样一次; -n 0: 不显示进程; -s 0: 无延迟
         process.arguments = ["-l", "1", "-n", "0", "-s", "0"]
         process.standardOutput = pipe
+        let devNull = FileHandle(forUpdatingAtPath: "/dev/null")
+        process.standardError = devNull
 
         do {
             try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
 
-            guard let output = String(data: data, encoding: .utf8) else { return }
+            var outputData = Data()
+            let readSemaphore = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInteractive).async {
+                outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+                readSemaphore.signal()
+            }
+
+            process.waitUntilExit()
+            _ = readSemaphore.wait(timeout: .now() + 5)
+
+            guard let output = String(data: outputData, encoding: .utf8) else { return }
 
             for line in output.components(separatedBy: "\n") {
                 if line.contains("CPU usage:") {

@@ -57,14 +57,25 @@ class MemoryScanner: ObservableObject {
             let before = self.readMemoryDetail()
             let beforeFree = before?.free ?? 0
 
-            // 调用 /usr/bin/purge 强制清空磁盘缓存，释放内存
+            // 调用 /usr/bin/purge 强制清空磁盘缓存，释放内存（带超时保护）
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/purge")
             self.purgeProcess = process
+
+            let semaphore = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in semaphore.signal() }
+
             do {
                 try process.run()
-                process.waitUntilExit()
-            } catch {}
+                // purge 有时会卡住（在某些 macOS 版本或权限不足时），设置 10 秒超时
+                if semaphore.wait(timeout: .now() + 10) == .timedOut {
+                    process.terminate()
+                }
+            } catch {
+                // 进程启动失败，无需等待
+            }
+
+            self.purgeProcess = nil
 
             guard !self.isCancelled else {
                 DispatchQueue.main.async {
@@ -136,6 +147,28 @@ class MemoryScanner: ObservableObject {
         )
     }
 
+    /// 静默刷新内存数据，不触发 loading 状态，供自动刷新使用
+    func refreshQuietly() {
+        guard !isScanning && !isPurging else { return }
+        isCancelled = false
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.isCancelled else { return }
+            let detail = self.readMemoryDetail()
+
+            guard !self.isCancelled else { return }
+            let processes = self.readTopProcesses()
+
+            guard !self.isCancelled else { return }
+            DispatchQueue.main.async {
+                self.memoryDetail = detail
+                self.topProcesses = processes
+            }
+        }
+        scanWorkItem = workItem
+        DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
+    }
+
     /// 通过 ps aux 命令获取内存占用最高的前 10 个进程
     private func readTopProcesses() -> [AppProcessInfo] {
         let process = Process()
@@ -143,13 +176,23 @@ class MemoryScanner: ObservableObject {
         process.executableURL = URL(fileURLWithPath: "/bin/ps")
         process.arguments = ["aux"]
         process.standardOutput = pipe
+        let devNull = FileHandle(forUpdatingAtPath: "/dev/null")
+        process.standardError = devNull
 
         do {
             try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
 
-            guard let output = String(data: data, encoding: .utf8) else { return [] }
+            var outputData = Data()
+            let readSemaphore = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInteractive).async {
+                outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+                readSemaphore.signal()
+            }
+
+            process.waitUntilExit()
+            _ = readSemaphore.wait(timeout: .now() + 5)
+
+            guard let output = String(data: outputData, encoding: .utf8) else { return [] }
 
             var processes: [AppProcessInfo] = []
             let lines = output.components(separatedBy: "\n")

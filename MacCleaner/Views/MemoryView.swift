@@ -1,6 +1,7 @@
 // MemoryView.swift - 内存清理视图，展示内存详情、进程占用与释放结果
 
 import SwiftUI
+import Combine
 
 // 内存条目数据，用于可视化内存各区域占比
 private struct MemBar: Identifiable {
@@ -14,6 +15,8 @@ private struct MemBar: Identifiable {
 struct MemoryView: View {
     @EnvironmentObject private var localization: LocalizationManager
     @ObservedObject var scanner: MemoryScanner
+    let isActive: Bool
+    @State private var refreshTimer: AnyCancellable?
 
     var body: some View {
         ScrollView {
@@ -41,11 +44,37 @@ struct MemoryView: View {
             }
             .padding(24)
         }
-        .onAppear {
-            if scanner.memoryDetail == nil {
-                scanner.scanMemory()
+        .onChange(of: isActive) { active in
+            if active {
+                startAutoRefresh()
+            } else {
+                stopAutoRefresh()
             }
         }
+        .onAppear {
+            if isActive {
+                startAutoRefresh()
+            }
+        }
+        .onDisappear {
+            stopAutoRefresh()
+        }
+    }
+
+    private func startAutoRefresh() {
+        if scanner.memoryDetail == nil {
+            scanner.scanMemory()
+        }
+        refreshTimer = Timer.publish(every: 2, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in
+                scanner.refreshQuietly()
+            }
+    }
+
+    private func stopAutoRefresh() {
+        refreshTimer?.cancel()
+        refreshTimer = nil
     }
 
     private var headerSection: some View {
