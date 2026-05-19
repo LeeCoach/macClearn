@@ -12,6 +12,7 @@ struct DiskView: View {
     // 用户选中的可清理分类集合
     @State private var selectedCategories: Set<ScanCategoryType> = []
     @State private var selectedFiles: Set<URL> = []
+    @State private var excludedSelectedFiles: Set<URL> = []
     // 展开的分类集合，控制 DisclosureGroup 的展开/折叠
     @State private var expandedCategories: Set<ScanCategoryType> = []
     @State private var freeSpaceBefore: UInt64 = 0
@@ -35,12 +36,47 @@ struct DiskView: View {
     private var totalSelectedFileCount: Int {
         let fromCategories = scanner.scanResults
             .filter { selectedCleanableCategories.contains($0.categoryType) }
-            .reduce(0) { $0 + $1.fileCount }
+            .reduce(0) { count, category in
+                count + category.files.filter { !excludedSelectedFiles.contains($0.url) }.count
+            }
         let categoryURLs = Set(scanner.scanResults
             .filter { selectedCleanableCategories.contains($0.categoryType) }
             .flatMap { $0.files.map { $0.url } })
         let uniqueIndividual = selectedFiles.subtracting(categoryURLs)
         return fromCategories + uniqueIndividual.count
+    }
+
+    private var selectedCategorySummary: (count: Int, size: UInt64) {
+        scanner.scanResults
+            .filter { selectedCleanableCategories.contains($0.categoryType) }
+            .reduce((count: 0, size: UInt64(0))) { partial, category in
+                let selectedFiles = category.files.filter { !excludedSelectedFiles.contains($0.url) }
+                return (
+                    count: partial.count + selectedFiles.count,
+                    size: partial.size + selectedFiles.reduce(UInt64(0)) { $0 + $1.size }
+                )
+            }
+    }
+
+    private var selectedIndividualSummary: (count: Int, size: UInt64) {
+        let categoryURLs = Set(scanner.scanResults
+            .filter { selectedCleanableCategories.contains($0.categoryType) }
+            .flatMap { $0.files.map(\.url) })
+        return scanner.scanResults
+            .flatMap(\.files)
+            .filter { selectedFiles.contains($0.url) && !categoryURLs.contains($0.url) }
+            .reduce((count: 0, size: UInt64(0))) { partial, file in
+                (count: partial.count + 1, size: partial.size + file.size)
+            }
+    }
+
+    private var scanSummaryText: String? {
+        guard let date = scanner.lastScanDate else { return nil }
+        return localization.text("disk.lastScan", date.formatted(date: .abbreviated, time: .shortened))
+    }
+
+    private var hasVisibleResults: Bool {
+        scanner.scanResults.contains { $0.fileCount > 0 }
     }
 
     // 是否可以执行清理
@@ -68,6 +104,10 @@ struct DiskView: View {
                 Spacer()
                 emptyState
                 Spacer()
+            } else if scanner.hasCompletedScan && !scanner.isScanning && !hasVisibleResults {
+                Spacer()
+                cleanState
+                Spacer()
             } else {
                 resultList
             }
@@ -79,15 +119,17 @@ struct DiskView: View {
                 performClean()
             }
         } message: {
-            let totalSize = scanner.scanResults
-                .filter { selectedCleanableCategories.contains($0.categoryType) }
-                .reduce(UInt64(0)) { $0 + $1.totalSize }
-            +
-            scanner.scanResults
-                .flatMap { $0.files }
-                .filter { selectedFiles.contains($0.url) }
-                .reduce(UInt64(0)) { $0 + $1.size }
-            Text(localization.text("disk.confirm.messageFiles", totalSelectedFileCount, formatSize(totalSize)))
+            let categorySummary = selectedCategorySummary
+            let individualSummary = selectedIndividualSummary
+            let trashCount = selectedCleanableCategories.contains(.trash)
+                ? scanner.scanResults.first { $0.categoryType == .trash }?.fileCount ?? 0
+                : selectedFiles.filter { parentCategoryType(for: $0) == .trash }.count
+            Text(localization.text(
+                "disk.confirm.messageFiles",
+                categorySummary.count + individualSummary.count,
+                formatSize(categorySummary.size + individualSummary.size),
+                trashCount
+            ))
         }
         .sheet(isPresented: $showExcludedPaths) {
             ExcludedPathsView(permissionManager: permissionManager)
@@ -119,6 +161,12 @@ struct DiskView: View {
             .tint(.orange)
 
             Spacer()
+
+            if let scanSummaryText {
+                Text(scanSummaryText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Button(action: { showExcludedPaths = true }) {
                 Image(systemName: "list.bullet.rectangle")
@@ -268,6 +316,20 @@ struct DiskView: View {
         }
     }
 
+    private var cleanState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 56))
+                .foregroundStyle(.green)
+            Text(localization.text("disk.noResults.title"))
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text(localization.text("disk.noResults.message"))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+    }
+
     // 扫描结果列表，按分类分组展示，支持展开/折叠。使用 ScrollView 避免 List 在扫描更新时跳动
     private var resultList: some View {
         ScrollView {
@@ -390,18 +452,23 @@ struct DiskView: View {
 
     // 单个文件行，展示选择框、文件名、路径、受保护标记、大小和定位按钮
     private func fileRow(_ file: ScanFileItem, categoryType: ScanCategoryType) -> some View {
-        let isSelected = selectedCleanableCategories.contains(categoryType) || selectedFiles.contains(file.url)
+        let isCategorySelected = selectedCleanableCategories.contains(categoryType)
+        let isSelected = isCategorySelected ? !excludedSelectedFiles.contains(file.url) : selectedFiles.contains(file.url)
         let isBeingCleaned = scanner.isCleaning && isSelected
 
         return HStack(spacing: 8) {
             if categoryType.isCleanable {
                 Button(action: {
-                    if isSelected {
-                        selectedFiles.subtract([file.url])
-                    } else {
-                        if !selectedCleanableCategories.contains(categoryType) {
-                            selectedFiles.formUnion([file.url])
+                    if isCategorySelected {
+                        if excludedSelectedFiles.contains(file.url) {
+                            excludedSelectedFiles.remove(file.url)
+                        } else {
+                            excludedSelectedFiles.insert(file.url)
                         }
+                    } else if isSelected {
+                        selectedFiles.remove(file.url)
+                    } else {
+                        selectedFiles.insert(file.url)
                     }
                 }) {
                     Image(systemName: isSelected ? "checkmark.square.fill" : "square")
@@ -468,6 +535,7 @@ struct DiskView: View {
         cleanedSize = 0
         selectedCategories.removeAll()
         selectedFiles.removeAll()
+        excludedSelectedFiles.removeAll()
         expandedCategories.removeAll()
         Task {
             await scanner.scanDisk(excludedPaths: permissionManager.excludedPaths)
@@ -482,19 +550,37 @@ struct DiskView: View {
         }
         freeSpaceBefore = scanner.getFreeDiskSpace()
         showCleaningResult = false
-        let filesToRemove = selectedFiles
-        let categoriesToRemove = selectedCleanableCategories
+        let categorySnapshots = scanner.scanResults
+        let categoriesToCollect = selectedCleanableCategories
+        let individualFiles = selectedFiles
+        let excludedFiles = excludedSelectedFiles
+        let categoriesToRemove: Set<ScanCategoryType> = []
         let excluded = permissionManager.excludedPaths
         Task.detached(priority: .userInitiated) {
+            let categoryFiles = categorySnapshots
+                .filter { categoriesToCollect.contains($0.categoryType) }
+                .flatMap { category in
+                    category.files
+                        .map(\.url)
+                        .filter { !excludedFiles.contains($0) }
+                }
+            let filesToRemove = Set(categoryFiles).union(individualFiles)
             let size = await self.scanner.cleanCategories(categoriesToRemove, selectedFiles: filesToRemove, excludedPaths: excluded)
             await MainActor.run {
                 self.cleanedSize = size
                 self.freeSpaceAfter = self.scanner.getFreeDiskSpace()
                 self.selectedCategories.removeAll()
                 self.selectedFiles.removeAll()
+                self.excludedSelectedFiles.removeAll()
                 self.showCleaningResult = true
             }
         }
+    }
+
+    private func parentCategoryType(for url: URL) -> ScanCategoryType? {
+        scanner.scanResults.first { category in
+            category.files.contains { $0.url == url }
+        }?.categoryType
     }
 
     // 各扫描分类对应的颜色

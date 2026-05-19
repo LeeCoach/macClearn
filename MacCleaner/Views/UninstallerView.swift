@@ -21,6 +21,7 @@ struct UninstallerView: View {
     @State private var selectedResidualFiles: Set<URL> = []
     @State private var selectedBatchResidualFiles: Set<URL> = []
     @State private var displayMode: UninstallerMode = .installedApps
+    @State private var isPreparingResiduals = false
 
     // 根据搜索文本过滤应用列表
     private var displayedApps: [InstalledApp] {
@@ -114,6 +115,8 @@ struct UninstallerView: View {
         .overlay {
             if viewModel.isUninstalling {
                 uninstallingOverlay
+            } else if isPreparingResiduals {
+                preparingOverlay
             }
         }
     }
@@ -230,11 +233,7 @@ struct UninstallerView: View {
                 }
 
                 Button {
-                    let residuals = viewModel.scanResidualFiles(for: app)
-                    residualFiles = residuals
-                    selectedResidualFiles = Set(residuals.filter(\.isSelectedByDefault).map(\.id))
-                    selectedAppForUninstall = app
-                    showResidualSheet = true
+                    prepareSingleUninstall(for: app)
                 } label: {
                     Text(localization.text("uninstaller.uninstall"))
                         .font(.caption)
@@ -252,11 +251,7 @@ struct UninstallerView: View {
                 }
 
                 Button {
-                    let residuals = viewModel.scanResidualFiles(for: app)
-                    residualFiles = residuals
-                    selectedResidualFiles = Set(residuals.filter(\.isSelectedByDefault).map(\.id))
-                    selectedAppForUninstall = app
-                    showResidualSheet = true
+                    prepareSingleUninstall(for: app)
                 } label: {
                     Text(localization.text("uninstaller.uninstallApp"))
                 }
@@ -283,14 +278,7 @@ struct UninstallerView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
-                    let apps = viewModel.installedApps.filter { viewModel.selectedApps.contains($0.id) }
-                    var allResiduals: [ResidualFile] = []
-                    for app in apps {
-                        allResiduals.append(contentsOf: viewModel.scanResidualFiles(for: app))
-                    }
-                    batchResidualFiles = allResiduals
-                    selectedBatchResidualFiles = Set(allResiduals.filter(\.isSelectedByDefault).map(\.id))
-                    showBatchSheet = true
+                    prepareBatchUninstall()
                 } label: {
                     Text(localization.text("uninstaller.batch"))
                 }
@@ -462,8 +450,13 @@ struct UninstallerView: View {
             Color.black.opacity(0.2)
                 .ignoresSafeArea()
             VStack(spacing: 12) {
-                ProgressView()
-                    .scaleEffect(1.2)
+                if viewModel.totalOperationCount > 0 {
+                    ProgressView(value: viewModel.uninstallProgress)
+                        .frame(width: 180)
+                } else {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                }
                 if let app = viewModel.currentUninstallApp {
                     Text(localization.text("uninstaller.uninstallingApp", app.name))
                         .font(.subheadline)
@@ -474,8 +467,30 @@ struct UninstallerView: View {
                     Text(localization.text("uninstaller.uninstalling"))
                         .font(.subheadline)
                 }
+                if viewModel.totalOperationCount > 0 {
+                    Text(localization.text("uninstaller.operationProgress", viewModel.completedOperationCount, viewModel.totalOperationCount))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
             }
             .padding(24)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var preparingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.14)
+                .ignoresSafeArea()
+            VStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(1.1)
+                Text(localization.text("uninstaller.preparingResiduals"))
+                    .font(.subheadline)
+            }
+            .padding(22)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
@@ -654,5 +669,38 @@ struct UninstallerView: View {
         f.dateStyle = .short
         f.timeStyle = .none
         return f
+    }
+
+    private func prepareSingleUninstall(for app: InstalledApp) {
+        guard !isPreparingResiduals else { return }
+        isPreparingResiduals = true
+        Task {
+            let residuals = await viewModel.scanResidualFilesAsync(for: app)
+            await MainActor.run {
+                residualFiles = residuals
+                selectedResidualFiles = Set(residuals.filter(\.isSelectedByDefault).map(\.id))
+                selectedAppForUninstall = app
+                showResidualSheet = true
+                isPreparingResiduals = false
+            }
+        }
+    }
+
+    private func prepareBatchUninstall() {
+        guard !isPreparingResiduals else { return }
+        let apps = viewModel.installedApps.filter { viewModel.selectedApps.contains($0.id) }
+        isPreparingResiduals = true
+        Task {
+            var allResiduals: [ResidualFile] = []
+            for app in apps {
+                allResiduals.append(contentsOf: await viewModel.scanResidualFilesAsync(for: app))
+            }
+            await MainActor.run {
+                batchResidualFiles = allResiduals
+                selectedBatchResidualFiles = Set(allResiduals.filter(\.isSelectedByDefault).map(\.id))
+                showBatchSheet = true
+                isPreparingResiduals = false
+            }
+        }
     }
 }

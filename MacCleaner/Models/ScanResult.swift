@@ -55,20 +55,22 @@ struct ScanCategory: Identifiable, Codable {
     var totalSize: UInt64
     var fileCount: Int
     var files: [ScanFileItem]
+    var scannedAt: Date?
 
     var name: String { categoryType.titleKey }
     var icon: String { categoryType.icon }
     var isExpanded: Bool = false
 
     private enum CodingKeys: String, CodingKey {
-        case categoryType, totalSize, fileCount, files
+        case categoryType, totalSize, fileCount, files, scannedAt
     }
 
-    init(categoryType: ScanCategoryType, totalSize: UInt64 = 0, fileCount: Int = 0, files: [ScanFileItem] = [], isExpanded: Bool = false) {
+    init(categoryType: ScanCategoryType, totalSize: UInt64 = 0, fileCount: Int = 0, files: [ScanFileItem] = [], scannedAt: Date? = nil, isExpanded: Bool = false) {
         self.categoryType = categoryType
         self.totalSize = totalSize
         self.fileCount = fileCount
         self.files = files
+        self.scannedAt = scannedAt
         self.isExpanded = isExpanded
     }
 

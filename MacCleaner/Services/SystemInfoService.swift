@@ -13,8 +13,6 @@ class SystemInfoService: ObservableObject {
     @Published var diskUsed: UInt64 = 0
     @Published var diskFree: UInt64 = 0
     @Published var cpuUsage: Double = 0
-    /// 预估可清理的总大小
-    @Published var estimatedCleanable: UInt64 = 0
     @Published var isLoading: Bool = true
 
     private var timer: Timer?
@@ -47,9 +45,6 @@ class SystemInfoService: ObservableObject {
             DispatchQueue.main.async {
                 self.isLoading = false
             }
-
-            // 可清理空间估算可能很慢（遍历数十万文件），放在后面异步完成
-            self.estimateCleanable()
         }
     }
 
@@ -149,50 +144,6 @@ class SystemInfoService: ObservableObject {
             }
         } catch {}
     }
-
-    /// 估算可清理的缓存、日志、临时文件等总大小
-    private func estimateCleanable() {
-        let fm = FileManager.default
-        let home = NSHomeDirectory()
-        var total: UInt64 = 0
-
-        // 常见可清理目录：缓存、日志、临时文件、废纸篓、Xcode 衍生数据、浏览器缓存
-        let paths = [
-            "\(home)/Library/Caches",
-            "\(home)/Library/Logs",
-            "/tmp",
-            "\(home)/.Trash",
-            "\(home)/Library/Developer/Xcode/DerivedData",
-            "\(home)/Library/Caches/Google/Chrome",
-            "\(home)/Library/Caches/com.apple.Safari",
-            "\(home)/Library/Caches/Firefox/Profiles"
-        ]
-
-        for path in paths {
-            let url = URL(fileURLWithPath: path)
-            guard let enumerator = fm.enumerator(
-                at: url,
-                includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants],
-                errorHandler: { _, _ in true }
-            ) else { continue }
-
-            for case let fileURL as URL in enumerator {
-                do {
-                    let resourceValues = try fileURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
-                    if resourceValues.isDirectory == true { continue }
-                    total += UInt64(resourceValues.fileSize ?? 0)
-                } catch {
-                    continue
-                }
-            }
-        }
-
-        DispatchQueue.main.async {
-            self.estimatedCleanable = total
-        }
-    }
-
     deinit {
         timer?.invalidate()
     }

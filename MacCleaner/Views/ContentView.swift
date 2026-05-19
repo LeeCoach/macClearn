@@ -65,8 +65,9 @@ struct ContentView: View {
         } detail: {
             // 使用 ZStack 叠加各页面，通过 opacity 控制显示切换
             ZStack {
-                DashboardView(isActive: selectedItem == .dashboard) {
+                DashboardView(diskScanner: diskScanner, memoryScanner: memoryScanner, isActive: selectedItem == .dashboard) {
                     selectedItem = .disk
+                    startDiskScanIfNeeded()
                 }
                 .opacity(selectedItem == .dashboard ? 1 : 0)
 
@@ -84,7 +85,9 @@ struct ContentView: View {
                     Color.black.opacity(0.4)
                         .ignoresSafeArea()
 
-                    PermissionGuideView(permissionManager: permissionManager)
+                    PermissionGuideView(permissionManager: permissionManager) {
+                        startDiskScanIfNeeded()
+                    }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(.regularMaterial)
                 }
@@ -111,5 +114,16 @@ struct ContentView: View {
             unitIndex += 1
         }
         return String(format: "%.1f%@", value, units[unitIndex])
+    }
+
+    private func startDiskScanIfNeeded() {
+        guard permissionManager.hasFullDiskAccess else {
+            permissionManager.showPermissionGuide = true
+            return
+        }
+        guard !diskScanner.isScanning && !diskScanner.isCleaning else { return }
+        Task {
+            await diskScanner.scanDisk(excludedPaths: permissionManager.excludedPaths)
+        }
     }
 }

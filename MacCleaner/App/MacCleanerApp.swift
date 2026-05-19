@@ -72,7 +72,7 @@ struct SettingsView: View {
                     .fontWeight(.bold)
                 Text(localization.text("app.tagline"))
                     .foregroundStyle(.secondary)
-                Text(localization.text("settings.version"))
+                Text(localization.text("settings.version", AppVersion.marketing))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }

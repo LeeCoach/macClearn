@@ -7,6 +7,7 @@ import SwiftUI
 struct PermissionGuideView: View {
     @ObservedObject var permissionManager: PermissionManager
     @EnvironmentObject private var localization: LocalizationManager
+    var onPermissionGranted: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 24) {
@@ -59,6 +60,9 @@ struct PermissionGuideView: View {
 
                 Button(action: {
                     permissionManager.checkFullDiskAccess()
+                    if permissionManager.hasFullDiskAccess {
+                        onPermissionGranted()
+                    }
                 }) {
                     Label(localization.text("permission.recheck"), systemImage: "arrow.clockwise")
                 }

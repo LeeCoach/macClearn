@@ -12,6 +12,9 @@ class AppUninstaller: ObservableObject {
     @Published var isScanning: Bool = false
     @Published var isUninstalling: Bool = false
     @Published var currentUninstallApp: InstalledApp?
+    @Published var uninstallProgress: Double = 0.0
+    @Published var completedOperationCount: Int = 0
+    @Published var totalOperationCount: Int = 0
 
     @Published var orphanResiduals: [ResidualFile] = []
     @Published var isScanningOrphans: Bool = false
@@ -30,6 +33,14 @@ class AppUninstaller: ObservableObject {
         let allowedExtensions: Set<String>
         let requireBundleIdentifier: Bool
         let stripExtensions: [String]
+    }
+
+    private struct TrashTask {
+        let url: URL
+        let appID: URL?
+        let residualID: URL?
+        let isApp: Bool
+        let appName: String?
     }
 
     /// 扫描常见 Applications 目录下所有 .app 应用
@@ -239,73 +250,49 @@ class AppUninstaller: ObservableObject {
         return residuals
     }
 
+    /// 异步扫描单个应用残留，避免在点击卸载时阻塞界面
+    func scanResidualFilesAsync(for app: InstalledApp) async -> [ResidualFile] {
+        await Task.detached(priority: .userInitiated) {
+            Self.findResidualFiles(for: app)
+        }.value
+    }
+
     /// 卸载单个应用及其残留文件（移入废纸篓）
     func uninstallApp(_ app: InstalledApp, residualFiles: [ResidualFile]) {
         isUninstalling = true
         currentUninstallApp = app
+        uninstallProgress = 0
+        completedOperationCount = 0
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let fm = FileManager.default
+        let tasks = residualFiles.map {
+            TrashTask(url: $0.url, appID: nil, residualID: $0.id, isApp: false, appName: nil)
+        } + [
+            TrashTask(url: app.url, appID: app.id, residualID: nil, isApp: true, appName: app.name)
+        ]
+        totalOperationCount = tasks.count
 
-            for residual in residualFiles {
-                do {
-                    var resultURL: NSURL?
-                    try fm.trashItem(at: residual.url, resultingItemURL: &resultURL)
-                } catch {
-                    print("无法移除残留文件 \(residual.url.path): \(error.localizedDescription)")
-                }
-            }
-
-            do {
-                var resultURL: NSURL?
-                try fm.trashItem(at: app.url, resultingItemURL: &resultURL)
-            } catch {
-                print("无法移除应用 \(app.url.path): \(error.localizedDescription)")
-            }
-
-            DispatchQueue.main.async {
-                self?.installedApps.removeAll { $0.id == app.id }
-                self?.filteredApps.removeAll { $0.id == app.id }
-                self?.selectedApps.remove(app.id)
-                self?.isUninstalling = false
-                self?.currentUninstallApp = nil
-            }
+        Task {
+            await runTrashTasks(tasks)
         }
     }
 
     /// 批量卸载多个应用及其残留文件
     func batchUninstall(_ apps: [InstalledApp], residualFiles: [ResidualFile]) {
         isUninstalling = true
+        currentUninstallApp = nil
+        uninstallProgress = 0
+        completedOperationCount = 0
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let fm = FileManager.default
+        let residualTasks = residualFiles.map {
+            TrashTask(url: $0.url, appID: nil, residualID: $0.id, isApp: false, appName: nil)
+        }
+        let appTasks = apps.map {
+            TrashTask(url: $0.url, appID: $0.id, residualID: nil, isApp: true, appName: $0.name)
+        }
+        totalOperationCount = residualTasks.count + appTasks.count
 
-            for residual in residualFiles {
-                do {
-                    var resultURL: NSURL?
-                    try fm.trashItem(at: residual.url, resultingItemURL: &resultURL)
-                } catch {
-                    print("无法移除残留文件 \(residual.url.path): \(error.localizedDescription)")
-                }
-            }
-
-            for app in apps {
-                do {
-                    var resultURL: NSURL?
-                    try fm.trashItem(at: app.url, resultingItemURL: &resultURL)
-                } catch {
-                    print("无法移除应用 \(app.url.path): \(error.localizedDescription)")
-                }
-            }
-
-            DispatchQueue.main.async {
-                let ids = Set(apps.map(\.id))
-                self?.installedApps.removeAll { ids.contains($0.id) }
-                self?.filteredApps.removeAll { ids.contains($0.id) }
-                self?.selectedApps.subtract(ids)
-                self?.isUninstalling = false
-                self?.currentUninstallApp = nil
-            }
+        Task {
+            await runTrashTasks(residualTasks + appTasks)
         }
     }
 
@@ -340,6 +327,167 @@ class AppUninstaller: ObservableObject {
             return directorySize(at: url)
         }
         return (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(UInt64.init) ?? 0
+    }
+
+    private static func findResidualFiles(for app: InstalledApp) -> [ResidualFile] {
+        let fm = FileManager.default
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let library = home.appendingPathComponent("Library")
+        var residuals: [ResidualFile] = []
+
+        let searchPaths: [(String, String)] = [
+            ("Application Support", app.name),
+            ("Application Support", app.bundleID),
+            ("Preferences", "\(app.bundleID).plist"),
+            ("Caches", app.bundleID),
+            ("Caches", app.name),
+            ("Logs", app.name),
+            ("LaunchAgents", app.bundleID),
+            ("LaunchAgents", app.name),
+            ("Containers", app.bundleID),
+            ("Group Containers", app.bundleID),
+            ("Saved Application State", "\(app.bundleID).savedState"),
+            ("HTTPStorages", app.bundleID),
+            ("WebKit", app.bundleID)
+        ]
+
+        for (subpath, component) in searchPaths {
+            let target = library.appendingPathComponent(subpath).appendingPathComponent(component)
+
+            if fm.fileExists(atPath: target.path) {
+                let size = Self.directorySize(at: target)
+                let isProtected = subpath == "Containers" || subpath == "Group Containers"
+                residuals.append(ResidualFile(
+                    id: target,
+                    url: target,
+                    name: "\(subpath)/\(component)",
+                    size: size,
+                    isProtected: isProtected
+                ))
+            }
+        }
+
+        let launchAgentsDir = library.appendingPathComponent("LaunchAgents")
+        if let contents = try? fm.contentsOfDirectory(at: launchAgentsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+            for fileURL in contents {
+                let filename = fileURL.lastPathComponent
+                if filename.hasPrefix(app.bundleID) || filename.hasPrefix(app.name) {
+                    residuals.append(ResidualFile(
+                        id: fileURL,
+                        url: fileURL,
+                        name: "LaunchAgents/\(filename)",
+                        size: Self.directorySize(at: fileURL),
+                        isProtected: false
+                    ))
+                }
+            }
+        }
+
+        let groupContainersDir = library.appendingPathComponent("Group Containers")
+        if let contents = try? fm.contentsOfDirectory(at: groupContainersDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+            for fileURL in contents where fileURL.lastPathComponent.hasPrefix(app.bundleID) {
+                residuals.append(ResidualFile(
+                    id: fileURL,
+                    url: fileURL,
+                    name: "Group Containers/\(fileURL.lastPathComponent)",
+                    size: Self.directorySize(at: fileURL),
+                    isProtected: true
+                ))
+            }
+        }
+
+        let savedStateDir = library.appendingPathComponent("Saved Application State")
+        if let contents = try? fm.contentsOfDirectory(at: savedStateDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+            for fileURL in contents where fileURL.lastPathComponent.hasPrefix(app.bundleID) {
+                residuals.append(ResidualFile(
+                    id: fileURL,
+                    url: fileURL,
+                    name: "Saved Application State/\(fileURL.lastPathComponent)",
+                    size: Self.directorySize(at: fileURL),
+                    isProtected: false
+                ))
+            }
+        }
+
+        return residuals
+    }
+
+    private func runTrashTasks(_ tasks: [TrashTask]) async {
+        if tasks.isEmpty {
+            await MainActor.run {
+                finishTrashOperation()
+            }
+            return
+        }
+
+        let maxConcurrentTasks = 8
+
+        await withTaskGroup(of: TrashTask?.self) { group in
+            var iterator = tasks.makeIterator()
+            var submitted = 0
+
+            func submitNext() {
+                guard let task = iterator.next() else { return }
+                submitted += 1
+                group.addTask {
+                    do {
+                        var resultURL: NSURL?
+                        try FileManager.default.trashItem(at: task.url, resultingItemURL: &resultURL)
+                        return task
+                    } catch {
+                        print("无法移除 \(task.url.path): \(error.localizedDescription)")
+                        return nil
+                    }
+                }
+            }
+
+            for _ in 0..<min(maxConcurrentTasks, tasks.count) {
+                submitNext()
+            }
+
+            for await completedTask in group {
+                await MainActor.run {
+                    completedOperationCount += 1
+                    uninstallProgress = Double(completedOperationCount) / Double(totalOperationCount)
+
+                    if let completedTask {
+                        applyCompletedTrashTask(completedTask)
+                    }
+                }
+
+                if submitted < tasks.count {
+                    submitNext()
+                }
+            }
+        }
+
+        await MainActor.run {
+            finishTrashOperation()
+        }
+    }
+
+    private func applyCompletedTrashTask(_ task: TrashTask) {
+        if task.isApp, let appID = task.appID {
+            installedApps.removeAll { $0.id == appID }
+            filteredApps.removeAll { $0.id == appID }
+            selectedApps.remove(appID)
+            if currentUninstallApp?.id == appID {
+                currentUninstallApp = nil
+            }
+        }
+
+        if let residualID = task.residualID {
+            orphanResiduals.removeAll { $0.id == residualID }
+            selectedOrphanResiduals.remove(residualID)
+        }
+    }
+
+    private func finishTrashOperation() {
+        isUninstalling = false
+        currentUninstallApp = nil
+        uninstallProgress = 0
+        completedOperationCount = 0
+        totalOperationCount = 0
     }
 
     private static func installedAppIndex(from apps: [InstalledApp]) -> InstalledAppIndex {
@@ -587,25 +735,17 @@ class AppUninstaller: ObservableObject {
     /// 清理选中的孤立残留文件（移入废纸篓）
     func cleanOrphanResiduals(_ residuals: [ResidualFile]) {
         isUninstalling = true
+        currentUninstallApp = nil
+        uninstallProgress = 0
+        completedOperationCount = 0
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let fm = FileManager.default
-            for residual in residuals {
-                do {
-                    var resultURL: NSURL?
-                    try fm.trashItem(at: residual.url, resultingItemURL: &resultURL)
-                } catch {
-                    print("无法移除残留文件 \(residual.url.path): \(error.localizedDescription)")
-                }
-            }
+        let tasks = residuals.map {
+            TrashTask(url: $0.url, appID: nil, residualID: $0.id, isApp: false, appName: nil)
+        }
+        totalOperationCount = tasks.count
 
-            DispatchQueue.main.async {
-                let cleanedIDs = Set(residuals.map(\.id))
-                self?.orphanResiduals.removeAll { cleanedIDs.contains($0.id) }
-                self?.selectedOrphanResiduals.subtract(cleanedIDs)
-                self?.isUninstalling = false
-                self?.currentUninstallApp = nil
-            }
+        Task {
+            await runTrashTasks(tasks)
         }
     }
 }

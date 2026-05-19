@@ -15,6 +15,7 @@ class DiskScanner: ObservableObject {
     @Published var activeScanCount: Int = 0
     @Published var scannedFileCount: Int = 0
     @Published var activeCategoryTypes: Set<ScanCategoryType> = []
+    @Published var lastScanDate: Date?
 
     private let fileManager = FileManager.default
     private var isCancelled = false
@@ -97,6 +98,7 @@ class DiskScanner: ObservableObject {
             .filter { $0.categoryType.isCleanable }
             .reduce(0) { $0 + $1.totalSize }
         hasCompletedScan = true
+        lastScanDate = loaded.compactMap(\.scannedAt).max()
     }
 
     /// 并发扫描磁盘，所有分类同时启动，实时反馈文件计数和中间结果
@@ -111,6 +113,7 @@ class DiskScanner: ObservableObject {
             scanResults = []
             totalCleanableSize = 0
             hasCompletedScan = false
+            lastScanDate = nil
             activeScanCount = 0
             scannedFileCount = 0
             activeCategoryTypes = []
@@ -178,9 +181,16 @@ class DiskScanner: ObservableObject {
         }
 
         await MainActor.run {
+            let completedAt = Date()
+            scanResults = scanResults.map { category in
+                var updated = category
+                updated.scannedAt = completedAt
+                return updated
+            }
             isScanning = false
             scanProgress = 1.0
             hasCompletedScan = true
+            lastScanDate = completedAt
             activeScanCount = 0
         }
         saveScanResults()
@@ -421,10 +431,18 @@ class DiskScanner: ObservableObject {
             cleanProgress = 0.0
         }
 
+        let maxConcurrentCleanTasks = 12
         let cleaned = await withTaskGroup(of: (UInt64, URL).self) { group in
-            for task in tasks {
-                if isCleanCancelled { break }
-                group.addTask {
+            var iterator = tasks.makeIterator()
+            var submitted = 0
+
+            func submitNext() {
+                guard !isCleanCancelled, let task = iterator.next() else { return }
+                submitted += 1
+                group.addTask { [weak self] in
+                    if self?.isCleanCancelled == true {
+                        return (0, task.url)
+                    }
                     do {
                         if task.isTrash {
                             try FileManager.default.removeItem(at: task.url)
@@ -437,6 +455,10 @@ class DiskScanner: ObservableObject {
                         return (0, task.url)
                     }
                 }
+            }
+
+            for _ in 0..<min(maxConcurrentCleanTasks, totalFiles) {
+                submitNext()
             }
 
             var cleanedSize: UInt64 = 0
@@ -455,6 +477,8 @@ class DiskScanner: ObservableObject {
                 }
                 if isCleanCancelled {
                     group.cancelAll()
+                } else if submitted < totalFiles {
+                    submitNext()
                 }
             }
             return (cleanedSize, cleanedURLs)

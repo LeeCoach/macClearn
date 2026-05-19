@@ -63,7 +63,7 @@ extension LocalizationManager {
             "settings.moveToTrash.help": "启用后，清理的文件将移至废纸篓而非永久删除",
             "settings.general.tab": "通用",
             "settings.about.tab": "关于",
-            "settings.version": "版本 1.1.0",
+            "settings.version": "版本 %@",
 
             "nav.dashboard": "仪表盘",
             "nav.memory": "内存清理",
@@ -94,8 +94,14 @@ extension LocalizationManager {
             "dashboard.diskFree": "可用磁盘空间",
             "dashboard.cleanable": "可清理空间",
             "dashboard.cleanable.description": "包括缓存文件、日志、临时文件、废纸篓和浏览器缓存等",
+            "dashboard.cleanable.scanning": "扫描中",
+            "dashboard.cleanable.notScanned": "未扫描",
             "dashboard.quickActions": "快速操作",
             "dashboard.cleanMemory": "清理内存",
+            "dashboard.cleanMemory.running": "正在清理内存…",
+            "dashboard.cleanMemory.done": "内存清理已完成，系统状态已刷新。",
+            "dashboard.cleanMemory.doneWithAmount": "内存清理已完成，共释放 %@。",
+            "dashboard.cleanMemory.failed": "内存清理未能启动，请稍后重试。",
             "dashboard.emptyTrash": "清空废纸篓",
             "dashboard.scanDisk": "扫描磁盘",
 
@@ -122,7 +128,7 @@ extension LocalizationManager {
             "disk.confirm.title": "确认清理",
             "disk.confirm.action": "确认清理",
             "disk.confirm.message": "将清理 %d 个分类，共释放 %@。普通文件会移至废纸篓；废纸篓分类会直接清空。",
-            "disk.confirm.messageFiles": "将清除 %d 个文件，共 %@",
+            "disk.confirm.messageFiles": "将处理 %d 个文件，共 %@。普通文件会移至废纸篓；其中 %d 个废纸篓文件会被永久删除。",
             "disk.scan": "扫描磁盘",
             "disk.cleanSelected": "清理选中",
             "disk.excludedPaths.help": "排除列表",
@@ -141,6 +147,9 @@ extension LocalizationManager {
             "disk.largeFiles.help": "大文件仅供查看，请在 Finder 中手动确认后删除",
             "disk.viewOnly": "仅供查看",
             "disk.protected": "受保护",
+            "disk.lastScan": "上次扫描：%@",
+            "disk.noResults.title": "未发现可清理文件",
+            "disk.noResults.message": "当前扫描范围内没有找到可清理项目。您可以调整排除列表后重新扫描。",
 
             "category.caches": "缓存文件",
             "category.logs": "日志文件",
@@ -199,7 +208,9 @@ extension LocalizationManager {
             "uninstaller.cleanSelected": "清理选中",
             "uninstaller.orphansSelected": "已选择 %d 个残留 · %@",
             "uninstaller.orphanCleanTitle": "清理卸载残留",
-            "uninstaller.orphanCleanMessage": "将清理 %d 个残留文件，共 %@。文件将移入废纸篓。"
+            "uninstaller.orphanCleanMessage": "将清理 %d 个残留文件，共 %@。文件将移入废纸篓。",
+            "uninstaller.preparingResiduals": "正在查找残留文件…",
+            "uninstaller.operationProgress": "%d / %d 已完成"
         ],
 
         .english: [
@@ -215,7 +226,7 @@ extension LocalizationManager {
             "settings.moveToTrash.help": "When enabled, cleaned files are moved to Trash instead of permanently deleted.",
             "settings.general.tab": "General",
             "settings.about.tab": "About",
-            "settings.version": "Version 1.1.0",
+            "settings.version": "Version %@",
 
             "nav.dashboard": "Dashboard",
             "nav.memory": "Memory Cleaner",
@@ -246,8 +257,14 @@ extension LocalizationManager {
             "dashboard.diskFree": "Free Disk Space",
             "dashboard.cleanable": "Cleanable Space",
             "dashboard.cleanable.description": "Includes cache files, logs, temporary files, Trash, browser caches, and more.",
+            "dashboard.cleanable.scanning": "Scanning",
+            "dashboard.cleanable.notScanned": "Not scanned",
             "dashboard.quickActions": "Quick Actions",
             "dashboard.cleanMemory": "Clean Memory",
+            "dashboard.cleanMemory.running": "Cleaning memory…",
+            "dashboard.cleanMemory.done": "Memory cleanup completed. System status has been refreshed.",
+            "dashboard.cleanMemory.doneWithAmount": "Memory cleanup completed. Freed %@.",
+            "dashboard.cleanMemory.failed": "Memory cleanup could not start. Please try again later.",
             "dashboard.emptyTrash": "Empty Trash",
             "dashboard.scanDisk": "Scan Disk",
 
@@ -274,7 +291,7 @@ extension LocalizationManager {
             "disk.confirm.title": "Confirm Cleanup",
             "disk.confirm.action": "Clean",
             "disk.confirm.message": "Will clean %d categories, %@ total. Files will be moved to Trash; Trash category will be directly emptied.",
-            "disk.confirm.messageFiles": "Will delete %d files, %@ total",
+            "disk.confirm.messageFiles": "Will process %d files, %@ total. Regular files will be moved to Trash; %d Trash files will be permanently deleted.",
             "disk.scan": "Scan Disk",
             "disk.cleanSelected": "Clean Selected",
             "disk.excludedPaths.help": "Excluded paths",
@@ -293,6 +310,9 @@ extension LocalizationManager {
             "disk.largeFiles.help": "Large files are view-only. Confirm manually in Finder before deleting.",
             "disk.viewOnly": "View Only",
             "disk.protected": "Protected",
+            "disk.lastScan": "Last scan: %@",
+            "disk.noResults.title": "No Cleanable Files Found",
+            "disk.noResults.message": "No cleanable items were found in the current scan scope. Adjust excluded paths and scan again if needed.",
 
             "category.caches": "Cache Files",
             "category.logs": "Log Files",
@@ -351,7 +371,9 @@ extension LocalizationManager {
             "uninstaller.cleanSelected": "Clean Selected",
             "uninstaller.orphansSelected": "%d leftovers selected · %@",
             "uninstaller.orphanCleanTitle": "Clean Leftovers",
-            "uninstaller.orphanCleanMessage": "Will clean %d leftover files, %@ total. Files will be moved to Trash."
+            "uninstaller.orphanCleanMessage": "Will clean %d leftover files, %@ total. Files will be moved to Trash.",
+            "uninstaller.preparingResiduals": "Finding leftover files…",
+            "uninstaller.operationProgress": "%d / %d completed"
         ],
 
         .traditionalChinese: [
@@ -367,7 +389,7 @@ extension LocalizationManager {
             "settings.moveToTrash.help": "啟用後，清理的檔案將移至垃圾桶而非永久刪除",
             "settings.general.tab": "一般",
             "settings.about.tab": "關於",
-            "settings.version": "版本 1.1.0",
+            "settings.version": "版本 %@",
 
             "nav.dashboard": "儀表板",
             "nav.memory": "記憶體清理",
@@ -398,8 +420,14 @@ extension LocalizationManager {
             "dashboard.diskFree": "可用磁碟空間",
             "dashboard.cleanable": "可清理空間",
             "dashboard.cleanable.description": "包括快取檔案、日誌、暫存檔案、垃圾桶和瀏覽器快取等",
+            "dashboard.cleanable.scanning": "掃描中",
+            "dashboard.cleanable.notScanned": "未掃描",
             "dashboard.quickActions": "快速操作",
             "dashboard.cleanMemory": "清理記憶體",
+            "dashboard.cleanMemory.running": "正在清理記憶體…",
+            "dashboard.cleanMemory.done": "記憶體清理已完成，系統狀態已重新整理。",
+            "dashboard.cleanMemory.doneWithAmount": "記憶體清理已完成，共釋放 %@。",
+            "dashboard.cleanMemory.failed": "記憶體清理未能啟動，請稍後重試。",
             "dashboard.emptyTrash": "清空垃圾桶",
             "dashboard.scanDisk": "掃描磁碟",
 
@@ -426,7 +454,7 @@ extension LocalizationManager {
             "disk.confirm.title": "確認清理",
             "disk.confirm.action": "確認清理",
             "disk.confirm.message": "將清理 %d 個分類，共 %@。普通檔案會移至垃圾桶；垃圾桶分類會直接清空。",
-            "disk.confirm.messageFiles": "將清除 %d 個檔案，共 %@",
+            "disk.confirm.messageFiles": "將處理 %d 個檔案，共 %@。一般檔案會移至垃圾桶；其中 %d 個垃圾桶檔案會被永久刪除。",
             "disk.scan": "掃描磁碟",
             "disk.cleanSelected": "清理選取",
             "disk.excludedPaths.help": "排除列表",
@@ -445,6 +473,9 @@ extension LocalizationManager {
             "disk.largeFiles.help": "大檔案僅供查看，請在 Finder 中手動確認後刪除",
             "disk.viewOnly": "僅供查看",
             "disk.protected": "受保護",
+            "disk.lastScan": "上次掃描：%@",
+            "disk.noResults.title": "未發現可清理檔案",
+            "disk.noResults.message": "目前掃描範圍內沒有找到可清理項目。您可以調整排除列表後重新掃描。",
 
             "category.caches": "快取檔案",
             "category.logs": "日誌檔案",
@@ -502,7 +533,9 @@ extension LocalizationManager {
             "uninstaller.cleanSelected": "清理選取",
             "uninstaller.orphansSelected": "已選擇 %d 個殘留 · %@",
             "uninstaller.orphanCleanTitle": "清理解除安裝殘留",
-            "uninstaller.orphanCleanMessage": "將清理 %d 個殘留檔案，共 %@。檔案將移入垃圾桶。"
+            "uninstaller.orphanCleanMessage": "將清理 %d 個殘留檔案，共 %@。檔案將移入垃圾桶。",
+            "uninstaller.preparingResiduals": "正在尋找殘留檔案…",
+            "uninstaller.operationProgress": "%d / %d 已完成"
         ]
     ]
 }

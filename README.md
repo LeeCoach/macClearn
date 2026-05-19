@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/LeeCoach/macClearn/releases/download/v1.0.0/MacCleaner-1.0.0.dmg"><img src="https://img.shields.io/badge/macOS-13%2B-blue?style=flat-square&logo=apple" alt="macOS 13+"></a>
+  <a href="https://github.com/LeeCoach/macClearn/releases/latest"><img src="https://img.shields.io/badge/macOS-13%2B-blue?style=flat-square&logo=apple" alt="macOS 13+"></a>
   <a href="https://github.com/LeeCoach/macClearn/releases/latest"><img src="https://img.shields.io/github/v/release/LeeCoach/macClearn?style=flat-square" alt="Latest release"></a>
 </p>
 
@@ -24,12 +24,14 @@
 | Item | Link |
 |------|------|
 | **Latest release** | https://github.com/LeeCoach/macClearn/releases/latest |
-| **Installer (DMG)** | [MacCleaner-1.0.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.0.0/MacCleaner-1.0.0.dmg) (~860 KB) |
-| **Repository copy** | [`dist/MacCleaner-1.0.0.dmg`](dist/MacCleaner-1.0.0.dmg) |
+| **Installer (DMG)** | [MacCleaner-1.2.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.2.0/MacCleaner-1.2.0.dmg) |
+| **All releases** | https://github.com/LeeCoach/macClearn/releases |
+
+> DMG installers are built automatically by GitHub Actions when a version tag (e.g. `v1.2.0`) is pushed. See [Release workflow](#release-workflow).
 
 ### Install
 
-1. Download **MacCleaner-1.0.0.dmg** from [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.0.0).
+1. Download **MacCleaner-1.2.0.dmg** from [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.2.0) (or use **Latest** above).
 2. Open the DMG, then drag **MacCleaner** into **Applications**.
 3. Launch MacCleaner from Applications. If macOS shows an unidentified-developer warning, open **System Settings → Privacy & Security** and choose **Open Anyway**.
 4. For disk cleanup, grant **Full Disk Access** when prompted (see [Permissions](#permissions) below).
@@ -84,7 +86,13 @@ swift build -c release
 
 **Open in Xcode:** open the repository folder in Xcode (Swift Package). Scheme name: `MacCleaner`.
 
-Prebuilt artifacts in `dist/`: `MacCleaner-1.0.0.dmg` (installer) and `MacCleaner.app` (app bundle).
+Local packaging (same as CI):
+
+```bash
+chmod +x scripts/package-dmg.sh
+./scripts/package-dmg.sh
+# Output: dist/MacCleaner-<version>.dmg
+```
 
 ### Settings
 
@@ -99,7 +107,10 @@ Prebuilt artifacts in `dist/`: `MacCleaner-1.0.0.dmg` (installer) and `MacCleane
 ```
 macClearn/
 ├── Package.swift              # Swift Package manifest
+├── scripts/package-dmg.sh     # Local DMG packaging
+├── .github/workflows/build.yml  # Tag-triggered CI release
 ├── MacCleaner/
+│   ├── Version.swift          # Marketing version (keep in sync with Info.plist)
 │   ├── App/                   # @main entry, Settings
 │   ├── Views/                 # SwiftUI screens
 │   ├── Services/              # Scanning, system info, permissions
@@ -123,7 +134,25 @@ macClearn/
 
 ### Version
 
-**1.0.0** · Bundle ID: `com.maccleaner.app`
+**1.2.0** · Bundle ID: `com.leecoach.maccleaner`
+
+### Release workflow
+
+Pushing a **semver tag** triggers [`.github/workflows/build.yml`](.github/workflows/build.yml) to build, package `MacCleaner-<version>.dmg`, and publish a GitHub Release.
+
+```bash
+# 1. Bump version in MacCleaner/Info.plist and MacCleaner/Version.swift
+# 2. Commit and push to main
+git add MacCleaner/Info.plist MacCleaner/Version.swift README.md
+git commit -m "chore: release 1.2.0"
+git push origin main
+
+# 3. Create and push tag (must match Info.plist version, prefix with v)
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+After the workflow succeeds, download the DMG from **Releases**. Tag name and `CFBundleShortVersionString` should stay in sync.
 
 ---
 
@@ -134,12 +163,14 @@ macClearn/
 | 项目 | 链接 |
 |------|------|
 | **最新版本** | https://github.com/LeeCoach/macClearn/releases/latest |
-| **安装包（DMG）** | [MacCleaner-1.0.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.0.0/MacCleaner-1.0.0.dmg)（约 860 KB） |
-| **仓库内文件** | [`dist/MacCleaner-1.0.0.dmg`](dist/MacCleaner-1.0.0.dmg) |
+| **安装包（DMG）** | [MacCleaner-1.2.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.2.0/MacCleaner-1.2.0.dmg) |
+| **全部版本** | https://github.com/LeeCoach/macClearn/releases |
+
+> 推送版本 tag（如 `v1.2.0`）后，GitHub Actions 会自动构建 DMG 并发布到 Releases。详见 [发布流程](#发布流程)。
 
 ### 安装步骤
 
-1. 从 [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.0.0) 下载 **MacCleaner-1.0.0.dmg**。
+1. 从 [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.2.0) 下载 **MacCleaner-1.2.0.dmg**（或使用上方的 **Latest**）。
 2. 打开镜像，将 **MacCleaner** 拖入 **应用程序** 文件夹。
 3. 从启动台或应用程序文件夹打开 MacCleaner。若提示「无法验证开发者」，请到 **系统设置 → 隐私与安全性** 选择 **仍要打开**。
 4. 使用磁盘清理前，按提示授予 **完全磁盘访问权限**（见下方 [权限说明](#权限说明)）。
@@ -194,7 +225,13 @@ swift build -c release
 
 **使用 Xcode：** 用 Xcode 打开项目根目录（Swift Package），Scheme 名称为 `MacCleaner`。
 
-`dist/` 目录包含发布产物：`MacCleaner-1.0.0.dmg`（安装包）与 `MacCleaner.app`（应用包）。
+本地打包（与 CI 相同）：
+
+```bash
+chmod +x scripts/package-dmg.sh
+./scripts/package-dmg.sh
+# 输出：dist/MacCleaner-<版本号>.dmg
+```
 
 ### 设置项
 
@@ -209,7 +246,10 @@ swift build -c release
 ```
 macClearn/
 ├── Package.swift              # Swift Package 配置
+├── scripts/package-dmg.sh     # 本地 DMG 打包脚本
+├── .github/workflows/build.yml  # 推送 tag 后自动发布
 ├── MacCleaner/
+│   ├── Version.swift          # 版本号（与 Info.plist 保持一致）
 │   ├── App/                   # 应用入口与设置
 │   ├── Views/                 # SwiftUI 界面
 │   ├── Services/              # 扫描、系统信息、权限
@@ -233,7 +273,25 @@ macClearn/
 
 ### 版本信息
 
-**1.0.0** · Bundle ID：`com.maccleaner.app`
+**1.2.0** · Bundle ID：`com.leecoach.maccleaner`
+
+### 发布流程
+
+向仓库推送 **semver 标签** 后，[`.github/workflows/build.yml`](.github/workflows/build.yml) 会自动编译、打包 `MacCleaner-<版本号>.dmg`，并创建 GitHub Release。
+
+```bash
+# 1. 更新 MacCleaner/Info.plist 与 MacCleaner/Version.swift 中的版本号
+# 2. 提交并推送到 main
+git add MacCleaner/Info.plist MacCleaner/Version.swift README.md
+git commit -m "chore: release 1.2.0"
+git push origin main
+
+# 3. 创建并推送 tag（须与 Info.plist 一致，前缀 v）
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+工作流完成后，在 **Releases** 页面下载 DMG。tag 名称应与 `CFBundleShortVersionString` 保持一致。
 
 ---
 

@@ -6,12 +6,19 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject private var localization: LocalizationManager
     @StateObject private var systemInfo = SystemInfoService()
+    @ObservedObject var diskScanner: DiskScanner
+    @ObservedObject var memoryScanner: MemoryScanner
     @State private var showEmptyTrashConfirmation = false
+    @State private var memoryCleanupMessage: String?
+    @State private var memoryCleanupSucceeded = false
+    @State private var didStartMemoryCleanupFromDashboard = false
     let isActive: Bool
     // 点击"扫描磁盘"时的回调，用于切换到磁盘页面
     let onScanDisk: () -> Void
 
-    init(isActive: Bool = false, onScanDisk: @escaping () -> Void = {}) {
+    init(diskScanner: DiskScanner, memoryScanner: MemoryScanner, isActive: Bool = false, onScanDisk: @escaping () -> Void = {}) {
+        self.diskScanner = diskScanner
+        self.memoryScanner = memoryScanner
         self.isActive = isActive
         self.onScanDisk = onScanDisk
     }
@@ -28,6 +35,10 @@ struct DashboardView: View {
                         statusCardsSection
 
                         cleanableSection
+
+                        if let memoryCleanupMessage {
+                            memoryCleanupStatus(message: memoryCleanupMessage)
+                        }
 
                         quickActionsSection
 
@@ -52,6 +63,18 @@ struct DashboardView: View {
         }
         .onDisappear {
             systemInfo.stopMonitoring()
+        }
+        .onChange(of: memoryScanner.isPurging) { isPurging in
+            guard didStartMemoryCleanupFromDashboard, !isPurging else { return }
+            didStartMemoryCleanupFromDashboard = false
+            systemInfo.refresh()
+            memoryCleanupSucceeded = true
+
+            if let before = memoryScanner.beforeMemory, let after = memoryScanner.afterMemory, after > before {
+                memoryCleanupMessage = localization.text("dashboard.cleanMemory.doneWithAmount", formatBytes(after - before))
+            } else {
+                memoryCleanupMessage = localization.text("dashboard.cleanMemory.done")
+            }
         }
         .alert(localization.text("dashboard.emptyTrash.title"), isPresented: $showEmptyTrashConfirmation) {
             Button(localization.text("common.cancel"), role: .cancel) {}
@@ -143,11 +166,25 @@ struct DashboardView: View {
                 Text(localization.text("dashboard.cleanable"))
                     .font(.headline)
                 Spacer()
-                Text(formatBytes(systemInfo.estimatedCleanable))
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.orange)
-                    .monospacedDigit()
+                if diskScanner.isScanning {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(localization.text("dashboard.cleanable.scanning"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if diskScanner.hasCompletedScan {
+                    Text(formatBytes(diskScanner.totalCleanableSize))
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.orange)
+                        .monospacedDigit()
+                } else {
+                    Text(localization.text("dashboard.cleanable.notScanned"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Text(localization.text("dashboard.cleanable.description"))
@@ -170,11 +207,12 @@ struct DashboardView: View {
 
             HStack(spacing: 12) {
                 QuickActionButton(
-                    title: localization.text("dashboard.cleanMemory"),
+                    title: memoryScanner.isPurging ? localization.text("dashboard.cleanMemory.running") : localization.text("dashboard.cleanMemory"),
                     icon: "memorychip",
                     color: .blue,
                     action: { purgeMemory() }
                 )
+                .disabled(memoryScanner.isPurging)
 
                 QuickActionButton(
                     title: localization.text("dashboard.emptyTrash"),
@@ -193,6 +231,30 @@ struct DashboardView: View {
         }
         .padding()
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+    }
+
+    private func memoryCleanupStatus(message: String) -> some View {
+        HStack(spacing: 10) {
+            if memoryScanner.isPurging && didStartMemoryCleanupFromDashboard {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: memoryCleanupSucceeded ? "checkmark.circle.fill" : "info.circle.fill")
+                    .foregroundStyle(memoryCleanupSucceeded ? .green : .secondary)
+            }
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke((memoryCleanupSucceeded ? Color.green : Color.secondary).opacity(0.25), lineWidth: 1)
+        )
     }
 
     // CPU 使用率对应的颜色等级
@@ -218,15 +280,11 @@ struct DashboardView: View {
 
     // 调用系统 purge 命令释放内存
     private func purgeMemory() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/purge")
-            try? process.run()
-            process.waitUntilExit()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                systemInfo.refresh()
-            }
-        }
+        guard !memoryScanner.isPurging else { return }
+        didStartMemoryCleanupFromDashboard = true
+        memoryCleanupSucceeded = false
+        memoryCleanupMessage = localization.text("dashboard.cleanMemory.running")
+        memoryScanner.purgeMemory()
     }
 
     // 清空废纸篓中的所有文件
