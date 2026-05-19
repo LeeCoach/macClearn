@@ -432,7 +432,7 @@ class DiskScanner: ObservableObject {
         }
 
         let maxConcurrentCleanTasks = 12
-        let cleaned = await withTaskGroup(of: (UInt64, URL).self) { group in
+        let cleaned: (UInt64, Set<URL>) = await withTaskGroup(of: (UInt64, URL).self) { group in
             var iterator = tasks.makeIterator()
             var submitted = 0
 
