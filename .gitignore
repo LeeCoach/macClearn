@@ -4,3 +4,4 @@ macCleaner/build
 /.reasonix
 /dist
 /.swiftpm
+.swiftpm/xcode

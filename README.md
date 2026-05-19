@@ -24,15 +24,16 @@
 | Item | Link |
 |------|------|
 | **Latest release** | https://github.com/LeeCoach/macClearn/releases/latest |
-| **Installer (DMG)** | [MacCleaner-1.2.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.2.0/MacCleaner-1.2.0.dmg) |
+| **Installer (DMG)** | [MacCleaner-1.2.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.2.0/MacCleaner-1.2.0.dmg) (~1.0 MB) |
 | **All releases** | https://github.com/LeeCoach/macClearn/releases |
 
-> DMG installers are built automatically by GitHub Actions when a version tag (e.g. `v1.2.0`) is pushed. See [Release workflow](#release-workflow).
+> DMG installers are built automatically by GitHub Actions when a version tag (e.g. `v1.2.0`) is pushed. See [Release workflow](#release-workflow).  
+> Each DMG contains **MacCleaner.app** and an **Applications** shortcut for drag-and-drop installation.
 
 ### Install
 
-1. Download **MacCleaner-1.2.0.dmg** from [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.2.0) (or use **Latest** above).
-2. Open the DMG, then drag **MacCleaner** into **Applications**.
+1. Download **MacCleaner-1.2.0.dmg** (~1.0 MB) from [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.2.0) (or use **Latest** above).
+2. Open the DMG, then drag **MacCleaner** into the **Applications** folder shown in the window.
 3. Launch MacCleaner from Applications. If macOS shows an unidentified-developer warning, open **System Settings → Privacy & Security** and choose **Open Anyway**.
 4. For disk cleanup, grant **Full Disk Access** when prompted (see [Permissions](#permissions) below).
 
@@ -91,7 +92,7 @@ Local packaging (same as CI):
 ```bash
 chmod +x scripts/package-dmg.sh
 ./scripts/package-dmg.sh
-# Output: dist/MacCleaner-<version>.dmg
+# Output: dist/MacCleaner-<version>.dmg (includes .app and Applications shortcut)
 ```
 
 ### Settings
@@ -163,15 +164,16 @@ After the workflow succeeds, download the DMG from **Releases**. Tag name and `C
 | 项目 | 链接 |
 |------|------|
 | **最新版本** | https://github.com/LeeCoach/macClearn/releases/latest |
-| **安装包（DMG）** | [MacCleaner-1.2.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.2.0/MacCleaner-1.2.0.dmg) |
+| **安装包（DMG）** | [MacCleaner-1.2.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.2.0/MacCleaner-1.2.0.dmg)（约 1.0 MB） |
 | **全部版本** | https://github.com/LeeCoach/macClearn/releases |
 
-> 推送版本 tag（如 `v1.2.0`）后，GitHub Actions 会自动构建 DMG 并发布到 Releases。详见 [发布流程](#发布流程)。
+> 推送版本 tag（如 `v1.2.0`）后，GitHub Actions 会自动构建 DMG 并发布到 Releases。详见 [发布流程](#发布流程)。  
+> 安装包内含 **MacCleaner.app** 与 **应用程序（Applications）** 快捷方式，支持拖放安装。
 
 ### 安装步骤
 
-1. 从 [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.2.0) 下载 **MacCleaner-1.2.0.dmg**（或使用上方的 **Latest**）。
-2. 打开镜像，将 **MacCleaner** 拖入 **应用程序** 文件夹。
+1. 从 [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.2.0) 下载 **MacCleaner-1.2.0.dmg**（约 1.0 MB，或使用上方的 **Latest**）。
+2. 打开镜像，将 **MacCleaner** 拖入窗口中的 **应用程序** 文件夹。
 3. 从启动台或应用程序文件夹打开 MacCleaner。若提示「无法验证开发者」，请到 **系统设置 → 隐私与安全性** 选择 **仍要打开**。
 4. 使用磁盘清理前，按提示授予 **完全磁盘访问权限**（见下方 [权限说明](#权限说明)）。
 
@@ -230,7 +232,7 @@ swift build -c release
 ```bash
 chmod +x scripts/package-dmg.sh
 ./scripts/package-dmg.sh
-# 输出：dist/MacCleaner-<版本号>.dmg
+# 输出：dist/MacCleaner-<版本号>.dmg（内含 .app 与「应用程序」快捷方式）
 ```
 
 ### 设置项

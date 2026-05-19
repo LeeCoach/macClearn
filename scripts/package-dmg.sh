@@ -22,8 +22,15 @@ cp "MacCleaner/Resources/MacCleanerIcon.icns" "${APP_BUNDLE}/Contents/Resources/
 cp "MacCleaner/Resources/SidebarIcon.png" "${APP_BUNDLE}/Contents/Resources/"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${APP_NAME}" "${APP_BUNDLE}/Contents/Info.plist"
 
+DMG_ROOT="dist/dmg-root"
 rm -f "${DMG_PATH}"
-hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_BUNDLE}" -ov -format UDZO "${DMG_PATH}"
+rm -rf "${DMG_ROOT}"
+mkdir -p "${DMG_ROOT}"
+cp -R "${APP_BUNDLE}" "${DMG_ROOT}/"
+ln -s /Applications "${DMG_ROOT}/Applications"
+
+hdiutil create -volname "${APP_NAME}" -srcfolder "${DMG_ROOT}" -ov -format UDZO "${DMG_PATH}"
+rm -rf "${DMG_ROOT}"
 
 echo "Done: ${DMG_PATH}"
 ls -lh "${DMG_PATH}"
