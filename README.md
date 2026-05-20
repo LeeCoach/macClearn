@@ -172,6 +172,8 @@ git push origin v1.3.0
 
 After the workflow succeeds, download the DMG from **Releases**. Tag name and `CFBundleShortVersionString` should stay in sync.
 
+**CI signing:** Without GitHub Secrets, the workflow uses **ad-hoc signing** (same as `./scripts/package-dmg.sh`) and still publishes the Release. Optional secrets (`DEVELOPER_ID_APPLICATION`, `APPLE_ID`, etc.) enable Developer ID signing and notarization for Gatekeeper-friendly downloads.
+
 ---
 
 ## 简体中文
@@ -328,6 +330,8 @@ git push origin v1.3.0
 ```
 
 工作流完成后，在 **Releases** 页面下载 DMG。tag 名称应与 `CFBundleShortVersionString` 保持一致。
+
+**CI 签名：** 未配置 GitHub Secrets 时，工作流使用 **ad-hoc 签名**（与 `./scripts/package-dmg.sh` 一致），仍会发布 Release。配置 `DEVELOPER_ID_APPLICATION`、`APPLE_ID` 等可选 Secret 后可启用 Developer ID 签名与公证，减少用户端的 Gatekeeper 提示。
 
 ---
 
