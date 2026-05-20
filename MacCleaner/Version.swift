@@ -4,7 +4,7 @@ import Foundation
 
 enum AppVersion {
     /// 对外展示版本号（修改版本时只改这里）
-    static let marketing = "1.3.0"
+    static let marketing = "1.4.0"
 
     /// 构建号，默认与 marketing 一致
     static let build = marketing
