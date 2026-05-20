@@ -2,6 +2,8 @@ name: Build and Package DMG
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
