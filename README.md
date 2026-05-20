@@ -37,6 +37,23 @@
 3. Launch MacCleaner from Applications. If macOS shows an unidentified-developer warning, open **System Settings → Privacy & Security** and choose **Open Anyway**.
 4. For disk cleanup, grant **Full Disk Access** when prompted (see [Permissions](#permissions) below).
 
+### “App is damaged” after download?
+
+macOS **Gatekeeper** may block unsigned or un-notarized apps downloaded from the internet. The DMG is usually **not** corrupted.
+
+**Fix (pick one):**
+
+```bash
+# Remove quarantine flag (adjust path if needed)
+xattr -cr ~/Downloads/MacCleaner-1.2.0.dmg
+xattr -cr /Applications/MacCleaner.app
+```
+
+- **System Settings → Privacy & Security → Open Anyway** (after first launch attempt), or  
+- **Right-click** MacCleaner → **Open** the first time.
+
+For distribution without this warning, configure **Developer ID signing + notarization** in GitHub Actions secrets (see [Release workflow](#release-workflow)).
+
 ### Overview
 
 **MacCleaner** is a native macOS application built with **Swift** and **SwiftUI**. It helps you monitor system health, free up disk space, release memory pressure, and uninstall applications along with common leftover files—all from a simple sidebar interface.
@@ -176,6 +193,23 @@ After the workflow succeeds, download the DMG from **Releases**. Tag name and `C
 2. 打开镜像，将 **MacCleaner** 拖入窗口中的 **应用程序** 文件夹。
 3. 从启动台或应用程序文件夹打开 MacCleaner。若提示「无法验证开发者」，请到 **系统设置 → 隐私与安全性** 选择 **仍要打开**。
 4. 使用磁盘清理前，按提示授予 **完全磁盘访问权限**（见下方 [权限说明](#权限说明)）。
+
+### 下载后提示「已损坏」？
+
+多为 macOS **Gatekeeper** 拦截未公证应用，**不是**安装包损坏。
+
+**解决方法（任选其一）：**
+
+```bash
+# 清除隔离属性（路径按实际下载位置修改）
+xattr -cr ~/Downloads/MacCleaner-1.2.0.dmg
+xattr -cr /Applications/MacCleaner.app
+```
+
+- **系统设置 → 隐私与安全性 → 仍要打开**（首次尝试打开后出现），或  
+- **右键** MacCleaner → **打开**（首次需确认）。
+
+若需用户下载后无此提示，请在 GitHub Actions 中配置 **Developer ID 签名与公证**（见 [发布流程](#发布流程)）。
 
 ### 项目简介
 

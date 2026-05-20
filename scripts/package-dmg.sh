@@ -21,6 +21,11 @@ cp "MacCleaner/Info.plist" "${APP_BUNDLE}/Contents/"
 cp "MacCleaner/Resources/MacCleanerIcon.icns" "${APP_BUNDLE}/Contents/Resources/"
 cp "MacCleaner/Resources/SidebarIcon.png" "${APP_BUNDLE}/Contents/Resources/"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${APP_NAME}" "${APP_BUNDLE}/Contents/Info.plist"
+chmod +x "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+
+# 本地 ad-hoc 签名，避免 Gatekeeper 提示「已损坏」（仍需用户在首次打开时允许）
+codesign --force --deep --sign - "${APP_BUNDLE}"
+codesign --verify --deep --strict "${APP_BUNDLE}"
 
 DMG_ROOT="dist/dmg-root"
 rm -f "${DMG_PATH}"
