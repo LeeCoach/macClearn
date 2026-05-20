@@ -43,7 +43,13 @@ class AppUninstaller: ObservableObject {
         let appName: String?
     }
 
-    /// 扫描常见 Applications 目录下所有 .app 应用
+    /// 可识别的插件/服务 bundle 扩展名
+    private static let pluginExtensions: Set<String> = [
+        "plugin", "service", "prefPane", "qlgenerator", "saver",
+        "inputMethod", "ideplugin", "wkplugin", "mdimporter", "app"
+    ]
+
+    /// 扫描常见 Applications 目录下所有应用及插件/服务
     func scanApplications() {
         guard !isScanning else { return }
         isScanning = true
@@ -62,6 +68,17 @@ class AppUninstaller: ObservableObject {
 
                 if let app = Self.installedApp(at: standardizedURL) {
                     apps.append(app)
+                }
+            }
+
+            // 扫描插件/服务路径
+            for pluginURL in Self.discoverPluginURLs() {
+                let standardizedURL = pluginURL.standardizedFileURL
+                guard !seenURLs.contains(standardizedURL) else { continue }
+                seenURLs.insert(standardizedURL)
+
+                if let plugin = Self.installedApp(at: standardizedURL) {
+                    apps.append(plugin)
                 }
             }
 
@@ -94,7 +111,52 @@ class AppUninstaller: ObservableObject {
             ) else { continue }
 
             for case let url as URL in enumerator {
-                if url.pathExtension == "app" {
+                if pluginExtensions.contains(url.pathExtension) {
+                    urls.append(url)
+                    enumerator.skipDescendants()
+                }
+            }
+        }
+
+        return urls
+    }
+
+    /// 扫描插件/服务目录，包括系统级和用户级 Library
+    private static func discoverPluginURLs() -> [URL] {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+
+        let pluginRoots = [
+            URL(fileURLWithPath: "/Library/Internet Plug-Ins"),
+            URL(fileURLWithPath: "/Library/PreferencePanes"),
+            URL(fileURLWithPath: "/Library/Spotlight"),
+            URL(fileURLWithPath: "/Library/QuickLook"),
+            URL(fileURLWithPath: "/Library/Screen Savers"),
+            URL(fileURLWithPath: "/Library/Input Methods"),
+            URL(fileURLWithPath: "/Library/Services"),
+            URL(fileURLWithPath: "/Library/Printers"),
+            home.appendingPathComponent("Library/Internet Plug-Ins"),
+            home.appendingPathComponent("Library/PreferencePanes"),
+            home.appendingPathComponent("Library/Spotlight"),
+            home.appendingPathComponent("Library/QuickLook"),
+            home.appendingPathComponent("Library/Screen Savers"),
+            home.appendingPathComponent("Library/Services"),
+            home.appendingPathComponent("Library/Input Methods"),
+            home.appendingPathComponent("Library/ScriptingAdditions")
+        ]
+
+        var urls: [URL] = []
+
+        for root in pluginRoots {
+            guard let enumerator = fm.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles],
+                errorHandler: { _, _ in true }
+            ) else { continue }
+
+            for case let url as URL in enumerator {
+                if pluginExtensions.contains(url.pathExtension) {
                     urls.append(url)
                     enumerator.skipDescendants()
                 }

@@ -24,6 +24,9 @@ class DiskScanner: ObservableObject {
     private var excludedPaths: [String] = []
     private var cleanedFileURLs: Set<URL> = []
 
+    /// 专用 I/O 队列，清理操作的阻塞 FileManager 调用在此执行，避免占用 Swift 协程线程
+    private let cleanIOQueue = DispatchQueue(label: "com.maccleaner.clean.io", qos: .userInitiated, attributes: .concurrent)
+
     private var home: String {
         NSHomeDirectory()
     }
@@ -35,7 +38,7 @@ class DiskScanner: ObservableObject {
     }
 
     init() {
-        loadPersistedResults()
+        // 不加载持久化的扫描结果，每次启动或进入磁盘页时重新扫描获取最新数据
     }
 
     /// 各扫描类别对应的文件系统路径
@@ -110,8 +113,6 @@ class DiskScanner: ObservableObject {
         await MainActor.run {
             isScanning = true
             scanProgress = 0.0
-            scanResults = []
-            totalCleanableSize = 0
             hasCompletedScan = false
             lastScanDate = nil
             activeScanCount = 0
@@ -155,23 +156,15 @@ class DiskScanner: ObservableObject {
                 }
 
                 await MainActor.run {
-                    let filteredFiles = category.files.filter { !cleanedFileURLs.contains($0.url) }
-                    let filteredTotalSize = filteredFiles.reduce(UInt64(0)) { $0 + $1.size }
-                    let finalCategory = ScanCategory(
-                        categoryType: category.categoryType,
-                        totalSize: filteredTotalSize,
-                        fileCount: filteredFiles.count,
-                        files: filteredFiles
-                    )
-                    if let index = scanResults.firstIndex(where: { $0.categoryType == finalCategory.categoryType }) {
-                        scanResults[index] = finalCategory
-                    } else {
-                        scanResults.append(finalCategory)
+                    // 保留已存在的截断标记（如果一个子路径触发了截断，后续路径也应视为截断）
+                    var merged = category
+                    if let existing = scanResults.first(where: { $0.categoryType == category.categoryType }), existing.isTruncated {
+                        merged.isTruncated = true
                     }
-                    scanResults.sort {
-                        guard let a = types.firstIndex(of: $0.categoryType),
-                              let b = types.firstIndex(of: $1.categoryType) else { return false }
-                        return a < b
+                    if let index = scanResults.firstIndex(where: { $0.categoryType == merged.categoryType }) {
+                        scanResults[index] = merged
+                    } else {
+                        scanResults.append(merged)
                     }
                     totalCleanableSize = scanResults
                         .filter { $0.categoryType.isCleanable }
@@ -194,6 +187,58 @@ class DiskScanner: ObservableObject {
             activeScanCount = 0
         }
         saveScanResults()
+    }
+
+    /// 重新扫描指定分类（用于截断分类清理后获取最新数据）
+    func rescanCategories(_ types: Set<ScanCategoryType>, excludedPaths: [String] = []) async {
+        isScanCancelled = false
+        self.excludedPaths = excludedPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+
+        await MainActor.run {
+            scannedFileCount = 0
+        }
+
+        await withTaskGroup(of: ScanCategory.self) { group in
+            for type in types {
+                group.addTask { [weak self] in
+                    guard let self else { return ScanCategory(categoryType: type) }
+                    if self.isScanCancelled { return ScanCategory(categoryType: type) }
+
+                    let category: ScanCategory
+                    if type == .largeFiles {
+                        category = await self.scanLargeFiles(type)
+                    } else {
+                        category = await self.scanCategory(type)
+                    }
+                    return category
+                }
+            }
+
+            for await category in group {
+                if isScanCancelled { group.cancelAll() }
+
+                await MainActor.run {
+                    // 合并已清理的文件过滤
+                    let filteredFiles = category.files.filter { !cleanedFileURLs.contains($0.url) }
+                    let filteredTotalSize = filteredFiles.reduce(UInt64(0)) { $0 + $1.size }
+                    let finalCategory = ScanCategory(
+                        categoryType: category.categoryType,
+                        totalSize: filteredTotalSize,
+                        fileCount: filteredFiles.count,
+                        files: filteredFiles,
+                        scannedAt: Date()
+                    )
+                    if let index = scanResults.firstIndex(where: { $0.categoryType == finalCategory.categoryType }) {
+                        scanResults[index] = finalCategory
+                    } else {
+                        scanResults.append(finalCategory)
+                    }
+                    totalCleanableSize = scanResults
+                        .filter { $0.categoryType.isCleanable }
+                        .reduce(0) { $0 + $1.totalSize }
+                }
+            }
+        }
     }
 
     /// 扫描指定类别的文件，每 50 个或每 0.3 秒推送中间结果到 UI
@@ -351,26 +396,15 @@ class DiskScanner: ObservableObject {
         return category
     }
 
-    /// 将扫描中间结果发布到 scanResults 列表，过滤掉并发清理中已删除的文件
+    /// 将扫描中间结果发布到 scanResults 列表
+    /// 注意：扫描时 cleanedFileURLs 始终为空，故不做过滤以避免 O(n) 遍历
     private func publishIntermediate(_ category: ScanCategory) {
-        let filteredFiles = category.files.filter { !cleanedFileURLs.contains($0.url) }
-        let filteredTotalSize = filteredFiles.reduce(UInt64(0)) { $0 + $1.size }
-        var filtered = category
-        filtered.files = filteredFiles
-        filtered.fileCount = filteredFiles.count
-        filtered.totalSize = filteredTotalSize
-
         if let index = scanResults.firstIndex(where: { $0.categoryType == category.categoryType }) {
-            scanResults[index] = filtered
+            scanResults[index] = category
         } else {
-            scanResults.append(filtered)
+            scanResults.append(category)
         }
-        let types = ScanCategoryType.allCases
-        scanResults.sort {
-            guard let a = types.firstIndex(of: $0.categoryType),
-                  let b = types.firstIndex(of: $1.categoryType) else { return false }
-            return a < b
-        }
+        // 分类来自 ScanCategoryType.allCases 的有序遍历，顺序已经确定，无需排序
         totalCleanableSize = scanResults
             .filter { $0.categoryType.isCleanable }
             .reduce(0) { $0 + $1.totalSize }
@@ -394,85 +428,130 @@ class DiskScanner: ObservableObject {
     }
 
     /// 并行清理选中的类别文件和单独文件
-    func cleanCategories(_ selected: Set<ScanCategoryType>, selectedFiles: Set<URL> = [], excludedPaths: [String] = []) async -> UInt64 {
+    func cleanCategories(
+        _ selected: Set<ScanCategoryType>,
+        selectedFiles: Set<URL> = [],
+        excludedFiles: Set<URL> = [],
+        excludedPaths: [String] = [],
+        permanentlyDelete: Bool = false
+    ) async -> UInt64 {
+        // 防止并发清理：如果已有清理任务在进行，直接返回
+        if isCleaning {
+            AppLogger.info("Clean already in progress, skipping duplicate request", log: .disk)
+            return 0
+        }
         isCancelled = false
         isCleanCancelled = false
         self.excludedPaths = excludedPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
 
-        let categoriesToClean = scanResults.filter { selected.contains($0.categoryType) && $0.categoryType.isCleanable }
-        let categoryFileURLs = Set(categoriesToClean.flatMap { $0.files.map { $0.url } })
-
-        var tasks: [(url: URL, size: UInt64, isTrash: Bool)] = []
-
-        for category in categoriesToClean {
-            for file in category.files {
-                if file.isProtected || isPathExcluded(file.url.path) { continue }
-                tasks.append((file.url, file.size, category.categoryType == .trash))
-            }
-        }
-
-        for url in selectedFiles.subtracting(categoryFileURLs) {
-            if isPathExcluded(url.path) || isProtectedPath(url.path) { continue }
-            let parentCategory = scanResults.first { $0.files.contains { $0.url == url } }
-            let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
-            let size = UInt64(resourceValues?.fileSize ?? 0)
-            tasks.append((url, size, parentCategory?.categoryType == .trash))
-        }
-
-        let totalFiles = tasks.count
-
-        await MainActor.run {
+        // 在主线程上直接从 live scanResults 构建任务列表（不拍快照）
+        // 这样边扫描边清理时，刚扫完的分类文件也会包含进来
+        let built = await MainActor.run { () -> (tasks: [(url: URL, size: UInt64, isTrash: Bool)], index: [URL: (file: ScanFileItem, categoryType: ScanCategoryType)]) in
             isCleaning = true
             cleanProgress = 0.0
-        }
 
-        let cleaned: (UInt64, Set<URL>) = await withTaskGroup(of: (UInt64, URL).self) { group in
-            var iterator = tasks.makeIterator()
-            var submitted = 0
+            let categoriesToClean = scanResults.filter { selected.contains($0.categoryType) && $0.categoryType.isCleanable }
 
-            func submitNext() {
-                guard !isCleanCancelled, let task = iterator.next() else { return }
-                submitted += 1
-                group.addTask { [weak self] in
-                    if self?.isCleanCancelled == true {
-                        return (0, task.url)
-                    }
-                    do {
-                        if task.isTrash {
-                            try FileManager.default.removeItem(at: task.url)
-                        } else {
-                            var resultURL: NSURL?
-                            try FileManager.default.trashItem(at: task.url, resultingItemURL: &resultURL)
-                        }
-                        return (task.size, task.url)
-                    } catch {
-                        return (0, task.url)
-                    }
+            var tasks: [(url: URL, size: UInt64, isTrash: Bool)] = []
+            var categoryFileURLs: Set<URL> = []
+            var fileIndex: [URL: (file: ScanFileItem, categoryType: ScanCategoryType)] = [:]
+
+            for category in scanResults {
+                for file in category.files {
+                    fileIndex[file.url] = (file, category.categoryType)
                 }
             }
 
-            for _ in 0..<min(Constants.Scan.maxConcurrentCleanTasks, totalFiles) {
-                submitNext()
+            for category in categoriesToClean {
+                for file in category.files {
+                    categoryFileURLs.insert(file.url)
+                    if excludedFiles.contains(file.url) || file.isProtected || isPathExcluded(file.url.path) { continue }
+                    tasks.append((file.url, file.size, category.categoryType == .trash))
+                }
+            }
+
+            // 单独勾选的文件（不在已选分类中）
+            for url in selectedFiles.subtracting(categoryFileURLs) {
+                if isPathExcluded(url.path) || isProtectedPath(url.path) { continue }
+                if let indexed = fileIndex[url] {
+                    if indexed.file.isProtected { continue }
+                    tasks.append((url, indexed.file.size, indexed.categoryType == .trash))
+                } else {
+                    let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
+                    let size = UInt64(resourceValues?.fileSize ?? 0)
+                    tasks.append((url, size, false))
+                }
+            }
+
+            return (tasks, fileIndex)
+        }
+
+        let tasks = built.tasks
+        let totalFiles = tasks.count
+
+        if totalFiles == 0 {
+            await MainActor.run {
+                isCleaning = false
+                cleanProgress = 0.0
+            }
+            return 0
+        }
+
+        let cleaned: (UInt64, Set<URL>) = await withTaskGroup(of: (UInt64, URL).self) { group in
+            // 一次性提交所有清理任务，消除 submitNext 的串行瓶颈
+            for task in tasks {
+                if isCleanCancelled { break }
+                group.addTask { [weak self] in
+                    guard let queue = self?.cleanIOQueue else { return (0, task.url) }
+                    // 保留弱引用，在 I/O 执行前检查实时取消状态
+                    weak var weakSelf = self
+                    return await withCheckedContinuation { continuation in
+                        queue.async {
+                            // 在 I/O 实际执行时检查取消，而非任务创建时
+                            if weakSelf?.isCleanCancelled ?? true {
+                                continuation.resume(returning: (0, task.url))
+                                return
+                            }
+                            do {
+                                if task.isTrash || permanentlyDelete {
+                                    try FileManager.default.removeItem(at: task.url)
+                                } else {
+                                    var resultURL: NSURL?
+                                    try FileManager.default.trashItem(at: task.url, resultingItemURL: &resultURL)
+                                }
+                                continuation.resume(returning: (task.size, task.url))
+                            } catch {
+                                continuation.resume(returning: (0, task.url))
+                            }
+                        }
+                    }
+                }
             }
 
             var cleanedSize: UInt64 = 0
             var cleanedURLs: Set<URL> = []
             var count = 0
+            var lastProgressUpdate = Date.distantPast
             for await (size, url) in group {
+                if isCleanCancelled {
+                    // 取消后不再记录结果，并终止取剩余结果
+                    group.cancelAll()
+                    break
+                }
                 if size > 0 {
                     cleanedSize += size
                     cleanedURLs.insert(url)
                 }
                 count += 1
-                let c = count
-                let t = totalFiles
-                await MainActor.run {
-                    cleanProgress = t > 0 ? Double(c) / Double(t) : 0
-                }
-                if isCleanCancelled {
-                    group.cancelAll()
-                } else if submitted < totalFiles {
-                    submitNext()
+                let now = Date()
+                if count == totalFiles ||
+                   now.timeIntervalSince(lastProgressUpdate) >= Constants.Scan.batchTimeThreshold * 0.167 {
+                    lastProgressUpdate = now
+                    let c = count
+                    let t = totalFiles
+                    await MainActor.run {
+                        cleanProgress = t > 0 ? Double(c) / Double(t) : 0
+                    }
                 }
             }
             return (cleanedSize, cleanedURLs)

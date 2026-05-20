@@ -53,11 +53,22 @@ struct ContentView: View {
                         if item == .disk && permissionManager.hasFullDiskAccess && !diskScanner.isScanning && diskScanner.totalCleanableSize > 0 {
                             Text(ByteFormatter.shared.format(diskScanner.totalCleanableSize, includeSpace: false))
                                 .font(.caption2)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(.white)
                                 .monospacedDigit()
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(.orange)
+                                )
                         }
                     }
                     .tag(item)
+                    .listRowBackground(
+                        selectedItem == item
+                            ? Color.blue.opacity(0.1)
+                            : Color.clear
+                    )
                 }
             }
             .navigationTitle("MacCleaner")

@@ -15,12 +15,15 @@ struct DiskView: View {
     @State private var excludedSelectedFiles: Set<URL> = []
     // 展开的分类集合，控制 DisclosureGroup 的展开/折叠
     @State private var expandedCategories: Set<ScanCategoryType> = []
-    @State private var freeSpaceBefore: UInt64 = 0
-    @State private var freeSpaceAfter: UInt64 = 0
+    @State private var cleanableBefore: UInt64 = 0
     @State private var cleanedSize: UInt64 = 0
+    @State private var wasPermanentDelete: Bool = false
     @State private var showCleaningResult: Bool = false
     @State private var showCleanConfirmation: Bool = false
     @State private var showExcludedPaths: Bool = false
+    @State private var permanentlyDelete = false
+    /// 扫描进度条水流动效相位（0→1 反复循环，扫描段从左侧滑入、右侧滑出）
+    @State private var scanShimmerPhase: CGFloat = 0
 
     // 当前是否正在扫描或清理
     private var isBusy: Bool {
@@ -115,23 +118,8 @@ struct DiskView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .alert(localization.text("disk.confirm.title"), isPresented: $showCleanConfirmation) {
-            Button(localization.text("common.cancel"), role: .cancel) {}
-            Button(localization.text("disk.confirm.action"), role: .destructive) {
-                performClean()
-            }
-        } message: {
-            let categorySummary = selectedCategorySummary
-            let individualSummary = selectedIndividualSummary
-            let trashCount = selectedCleanableCategories.contains(.trash)
-                ? scanner.scanResults.first { $0.categoryType == .trash }?.fileCount ?? 0
-                : selectedFiles.filter { parentCategoryType(for: $0) == .trash }.count
-            Text(localization.text(
-                "disk.confirm.messageFiles",
-                categorySummary.count + individualSummary.count,
-                ByteFormatter.shared.format(categorySummary.size + individualSummary.size),
-                trashCount
-            ))
+        .sheet(isPresented: $showCleanConfirmation) {
+            cleanConfirmationSheet
         }
         .sheet(isPresented: $showExcludedPaths) {
             ExcludedPathsView(permissionManager: permissionManager)
@@ -139,6 +127,14 @@ struct DiskView: View {
         }
         .onChange(of: isActive) { active in
             if active {
+                // 每次切换到磁盘页时重新检测权限（用户可能刚从设置中授权回来）
+                permissionManager.checkFullDiskAccess()
+                // 有权限但无数据时自动开始扫描
+                if permissionManager.hasFullDiskAccess && !scanner.isScanning && !scanner.isCleaning && scanner.scanResults.isEmpty {
+                    Task {
+                        await scanner.scanDisk(excludedPaths: permissionManager.excludedPaths)
+                    }
+                }
                 scanner.objectWillChange.send()
             }
         }
@@ -157,7 +153,7 @@ struct DiskView: View {
             Button(action: { showCleanConfirmation = true }) {
                 Label(localization.text("disk.cleanSelected"), systemImage: "trash")
             }
-            .disabled(!canClean)
+            .disabled(!canClean || scanner.isCleaning)
             .buttonStyle(.bordered)
             .controlSize(.large)
             .tint(.orange)
@@ -194,103 +190,213 @@ struct DiskView: View {
         .background(.bar)
     }
 
-    // 扫描进度条，实时显示文件计数
+    // 扫描进度条，渐变进度 + 实时文件计数
     private var scanProgressBar: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(spacing: 8) {
             HStack {
-                Text(localization.text("disk.scanning"))
+                Label(localization.text("disk.scanning"), systemImage: "magnifyingglass")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                // 进度为 0 时显示旋转指示器，让用户知道扫描正在进行
+                if scanner.scanProgress < 0.01 {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                }
                 Spacer()
-            }
-
-            ProgressView()
-                .progressViewStyle(.linear)
-                .tint(.accentColor)
-
-            HStack(spacing: 4) {
-                Image(systemName: "doc")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
                 Text(localization.text("disk.scannedFiles", scanner.scannedFileCount))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.tertiary)
+                    .contentTransition(.numericText())
+            }
+
+            // 自定义渐变进度条：扫描总量未知时使用更明显的移动扫描段
+            GeometryReader { geometry in
+                let barWidth = geometry.size.width
+                let progressWidth = max(0, barWidth * CGFloat(scanner.scanProgress))
+                let sweepWidth = min(max(barWidth * 0.28, 96), 180)
+                let sweepOffset = scanShimmerPhase * (barWidth + sweepWidth) - sweepWidth
+
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(.quaternary.opacity(0.65))
+                        .frame(height: 14)
+
+                    if scanner.isScanning {
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.blue.opacity(0.2), .cyan, .indigo.opacity(0.85)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: sweepWidth, height: 14)
+                            .offset(x: sweepOffset)
+                            .shadow(color: .blue.opacity(0.45), radius: 5, x: 0, y: 1)
+
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.clear, .white.opacity(0.75), .clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: sweepWidth * 0.45, height: 14)
+                            .offset(x: sweepOffset + sweepWidth * 0.35)
+                    }
+
+                    if scanner.scanProgress > 0.01 {
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.blue, .purple, .indigo],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: progressWidth, height: 14)
+                            .shadow(color: .blue.opacity(0.35), radius: 4, x: 0, y: 2)
+                            .animation(.easeOut(duration: 0.3), value: scanner.scanProgress)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+            }
+            .frame(height: 14)
+            .onAppear {
+                startScanProgressAnimation()
+            }
+            .onChange(of: scanner.isScanning) { isScanning in
+                guard isScanning else { return }
+                startScanProgressAnimation()
+            }
+
+            HStack {
                 Spacer()
                 Button(action: { scanner.cancelScan() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
+                    Label(localization.text("common.cancel"), systemImage: "xmark.circle.fill")
+                        .font(.caption2)
                         .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 8)
+        .padding(.bottom, 10)
+    }
+
+    private func startScanProgressAnimation() {
+        scanShimmerPhase = 0
+        DispatchQueue.main.async {
+            withAnimation(.linear(duration: 1.05).repeatForever(autoreverses: false)) {
+                if scanner.isScanning {
+                    scanShimmerPhase = 1
+                }
+            }
+        }
     }
 
     private var cleanProgressBar: some View {
-        VStack(spacing: 4) {
-            ProgressView(value: scanner.cleanProgress) {
-                Text(localization.text("disk.cleaning"))
+        VStack(spacing: 8) {
+            HStack {
+                Label(localization.text("disk.cleaning"), systemImage: "trash")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-            .progressViewStyle(.linear)
-            .tint(.green)
-
-            HStack(spacing: 6) {
+                Spacer()
                 Text("\(Int(scanner.cleanProgress * 100))%")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .monospacedDigit()
+                    .foregroundStyle(.green)
+                    .contentTransition(.numericText())
+            }
+
+            // 自定义渐变进度条：绿 → 青 → 蓝
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(.quaternary.opacity(0.5))
+                        .frame(height: 14)
+
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(
+                            LinearGradient(
+                                colors: [.green, .teal, .cyan],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: max(0, geometry.size.width * CGFloat(scanner.cleanProgress)), height: 14)
+                        .shadow(color: .green.opacity(0.35), radius: 4, x: 0, y: 2)
+                        .animation(.spring(response: 0.35), value: scanner.cleanProgress)
+                }
+            }
+            .frame(height: 14)
+
+            HStack {
                 Spacer()
                 Button(action: { scanner.cancelClean() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
+                    Label(localization.text("common.cancel"), systemImage: "xmark.circle.fill")
+                        .font(.caption2)
                         .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 8)
+        .padding(.bottom, 10)
     }
 
-    // 清理结果卡片，对比清理前后的可用空间
+    // 清理结果卡片，展示实际磁盘可用空间变化
     private var cleaningResultCard: some View {
-        HStack(spacing: 32) {
-            VStack(spacing: 4) {
-                Text(localization.text("disk.before"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(ByteFormatter.shared.format(freeSpaceBefore))
-                    .font(.title3)
-                    .fontWeight(.medium)
-            }
+        VStack(spacing: 12) {
+            HStack(spacing: 32) {
+                VStack(spacing: 4) {
+                    Text(localization.text("disk.before"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(ByteFormatter.shared.format(cleanableBefore))
+                        .font(.title3)
+                        .fontWeight(.medium)
+                }
 
-            Image(systemName: "arrow.right.circle.fill")
-                .font(.title2)
-                .foregroundStyle(.green)
-
-            VStack(spacing: 4) {
-                Text(localization.text("disk.after"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(ByteFormatter.shared.format(freeSpaceAfter))
-                    .font(.title3)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.green)
-            }
-
-            Spacer()
-
-            VStack(spacing: 4) {
-                Text(localization.text("disk.freed"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(ByteFormatter.shared.format(cleanedSize))
+                Image(systemName: "arrow.right.circle.fill")
                     .font(.title2)
-                    .fontWeight(.bold)
                     .foregroundStyle(.green)
+
+                VStack(spacing: 4) {
+                    Text(localization.text("disk.after"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(ByteFormatter.shared.format(scanner.totalCleanableSize))
+                        .font(.title3)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.green)
+                }
+
+                Spacer()
+
+                VStack(spacing: 4) {
+                    Text(localization.text("disk.freed"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(ByteFormatter.shared.format(cleanedSize))
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.green)
+                }
+            }
+
+            if !wasPermanentDelete && cleanedSize > 0 {
+                HStack(spacing: 4) {
+                    Image(systemName: "trash")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(localization.text("disk.freed.toTrashHint"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(16)
@@ -317,7 +423,10 @@ struct DiskView: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 400)
             Button {
-                permissionManager.showPermissionGuide = true
+                permissionManager.checkFullDiskAccess()
+                if !permissionManager.hasFullDiskAccess {
+                    permissionManager.showPermissionGuide = true
+                }
             } label: {
                 Label(localization.text("disk.noPermission.button"), systemImage: "lock.open")
             }
@@ -446,9 +555,17 @@ struct DiskView: View {
                             .foregroundStyle(Color.accentColor)
                     }
                 }
-                Text(localization.text("common.files.count", category.fileCount))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text(localization.text("common.files.count", category.fileCount))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if category.isTruncated {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                            .help("扫描结果已截断，文件数可能大于显示值")
+                    }
+                }
             }
 
             Spacer()
@@ -563,6 +680,120 @@ struct DiskView: View {
         }
     }
 
+    // 清理确认弹窗（Sheet），包含文件统计和永久删除选项
+    private var cleanConfirmationSheet: some View {
+        let categorySummary = selectedCategorySummary
+        let individualSummary = selectedIndividualSummary
+        let hasTrash = selectedCleanableCategories.contains(.trash)
+        let trashCount = hasTrash
+            ? scanner.scanResults.first { $0.categoryType == .trash }?.fileCount ?? 0
+            : selectedFiles.filter { parentCategoryType(for: $0) == .trash }.count
+        let onlyTrash = hasTrash && selectedCleanableCategories.subtracting([.trash]).isEmpty && selectedFiles.isEmpty
+
+        return VStack(spacing: 20) {
+            Image(systemName: onlyTrash ? "trash.slash" : "trash")
+                .font(.system(size: 36))
+                .foregroundStyle(onlyTrash ? .gray : .orange)
+
+            Text(localization.text("disk.confirm.title"))
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            VStack(spacing: 6) {
+                HStack {
+                    Text(localization.text("disk.confirm.fileCount"))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(categorySummary.count + individualSummary.count)")
+                        .fontWeight(.medium)
+                }
+                HStack {
+                    Text(localization.text("disk.confirm.totalSize"))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(ByteFormatter.shared.format(categorySummary.size + individualSummary.size))
+                        .fontWeight(.medium)
+                }
+                if hasTrash {
+                    HStack {
+                        Text(localization.text("disk.confirm.trashCount"))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(trashCount)")
+                            .fontWeight(.medium)
+                    }
+                }
+            }
+            .font(.subheadline)
+
+            if onlyTrash {
+                // 仅清理废纸篓：直接清空，无选项
+                VStack(spacing: 6) {
+                    Image(systemName: "trash.slash")
+                        .font(.title3)
+                        .foregroundStyle(.red)
+                    Text(localization.text("disk.confirm.trashOnly"))
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(.red.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle(isOn: $permanentlyDelete) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(localization.text("disk.confirm.permanentDelete"))
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(localization.text(permanentlyDelete
+                                ? "disk.confirm.permanentDelete.warning"
+                                : hasTrash
+                                    ? "disk.confirm.permanentDelete.hintTrash"
+                                    : "disk.confirm.permanentDelete.hint"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+                }
+                .padding(.vertical, 4)
+            }
+
+            HStack(spacing: 12) {
+                Button(localization.text("common.cancel")) {
+                    showCleanConfirmation = false
+                }
+                .keyboardShortcut(.cancelAction)
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+
+                Button {
+                    showCleanConfirmation = false
+                    performClean()
+                } label: {
+                    Label(
+                        localization.text(onlyTrash
+                            ? "disk.confirm.emptyTrash"
+                            : permanentlyDelete
+                                ? "disk.confirm.deleteNow"
+                                : "disk.confirm.action"),
+                        systemImage: onlyTrash ? "trash.slash" : permanentlyDelete ? "xmark.bin" : "trash"
+                    )
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .tint(onlyTrash ? .red : permanentlyDelete ? .red : .orange)
+                .controlSize(.large)
+            }
+        }
+        .padding(24)
+        .frame(width: 420)
+    }
+
     // 开始扫描磁盘
     private func startScan() {
         if !permissionManager.hasFullDiskAccess {
@@ -586,31 +817,38 @@ struct DiskView: View {
             permissionManager.showPermissionGuide = true
             return
         }
-        freeSpaceBefore = scanner.getFreeDiskSpace()
+        cleanableBefore = scanner.totalCleanableSize
+        wasPermanentDelete = permanentlyDelete
         showCleaningResult = false
-        let categorySnapshots = scanner.scanResults
-        let categoriesToCollect = selectedCleanableCategories
-        let individualFiles = selectedFiles
-        let excludedFiles = excludedSelectedFiles
-        let categoriesToRemove: Set<ScanCategoryType> = []
+        let categoriesToRemove = selectedCleanableCategories
+        let filesToRemove = selectedFiles
+        let filesToExclude = excludedSelectedFiles
         let excluded = permissionManager.excludedPaths
         Task.detached(priority: .userInitiated) {
-            let categoryFiles = categorySnapshots
-                .filter { categoriesToCollect.contains($0.categoryType) }
-                .flatMap { category in
-                    category.files
-                        .map(\.url)
-                        .filter { !excludedFiles.contains($0) }
-                }
-            let filesToRemove = Set(categoryFiles).union(individualFiles)
-            let size = await self.scanner.cleanCategories(categoriesToRemove, selectedFiles: filesToRemove, excludedPaths: excluded)
+            let size = await self.scanner.cleanCategories(
+                categoriesToRemove,
+                selectedFiles: filesToRemove,
+                excludedFiles: filesToExclude,
+                excludedPaths: excluded,
+                permanentlyDelete: self.permanentlyDelete
+            )
             await MainActor.run {
                 self.cleanedSize = size
-                self.freeSpaceAfter = self.scanner.getFreeDiskSpace()
                 self.selectedCategories.removeAll()
                 self.selectedFiles.removeAll()
                 self.excludedSelectedFiles.removeAll()
                 self.showCleaningResult = true
+
+                // 如果被清理的分类有截断标记，清理后重新扫描该分类以获取准确数据
+                let truncatedCleaned = self.scanner.scanResults.filter {
+                    categoriesToRemove.contains($0.categoryType) && $0.isTruncated
+                }
+                if !truncatedCleaned.isEmpty {
+                    let typesToRescan = Set(truncatedCleaned.map(\.categoryType))
+                    Task {
+                        await self.scanner.rescanCategories(typesToRescan, excludedPaths: excluded)
+                    }
+                }
             }
         }
     }

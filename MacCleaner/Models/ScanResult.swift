@@ -56,21 +56,24 @@ struct ScanCategory: Identifiable, Codable {
     var fileCount: Int
     var files: [ScanFileItem]
     var scannedAt: Date?
+    /// 扫描是否被截断（超过 maxFilesToScanPerCategory 后截断）
+    var isTruncated: Bool = false
 
     var name: String { categoryType.titleKey }
     var icon: String { categoryType.icon }
     var isExpanded: Bool = false
 
     private enum CodingKeys: String, CodingKey {
-        case categoryType, totalSize, fileCount, files, scannedAt
+        case categoryType, totalSize, fileCount, files, scannedAt, isTruncated
     }
 
-    init(categoryType: ScanCategoryType, totalSize: UInt64 = 0, fileCount: Int = 0, files: [ScanFileItem] = [], scannedAt: Date? = nil, isExpanded: Bool = false) {
+    init(categoryType: ScanCategoryType, totalSize: UInt64 = 0, fileCount: Int = 0, files: [ScanFileItem] = [], scannedAt: Date? = nil, isTruncated: Bool = false, isExpanded: Bool = false) {
         self.categoryType = categoryType
         self.totalSize = totalSize
         self.fileCount = fileCount
         self.files = files
         self.scannedAt = scannedAt
+        self.isTruncated = isTruncated
         self.isExpanded = isExpanded
     }
 

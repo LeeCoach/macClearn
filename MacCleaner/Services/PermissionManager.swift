@@ -20,17 +20,19 @@ class PermissionManager: ObservableObject {
         loadExcludedPaths()
     }
 
-    /// 检测是否拥有完全磁盘访问权限，通过实际枚举受 TCC 保护的目录来判断
+    /// 检测是否拥有完全磁盘访问权限，通过实际读取受 TCC 保护的目录内容来判断
     func checkFullDiskAccess() {
         let protectedPaths = [
             NSHomeDirectory() + "/Library/Safari",
             NSHomeDirectory() + "/Library/Messages",
             NSHomeDirectory() + "/Library/Mail",
-            NSHomeDirectory() + "/Library/Application Support/com.apple.TCC",
-            "/Library/Application Support/com.apple.TCC"
+            NSHomeDirectory() + "/Library/Accounts",
+            NSHomeDirectory() + "/Library/IdentityServices",
+            NSHomeDirectory() + "/Library/Calendars",
+            NSHomeDirectory() + "/Library/Containers/com.apple.Safari/Data/Library"
         ]
         
-        hasFullDiskAccess = protectedPaths.contains(where: canEnumerateProtectedDirectory)
+        hasFullDiskAccess = protectedPaths.contains(where: canReadProtectedDirectory)
 
         if hasFullDiskAccess {
             showPermissionGuide = false
@@ -114,13 +116,9 @@ class PermissionManager: ObservableObject {
         URL(fileURLWithPath: path).standardizedFileURL.path
     }
 
-    private func canEnumerateProtectedDirectory(_ path: String) -> Bool {
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
-              isDirectory.boolValue else {
-            return false
-        }
-
+    /// 尝试读取目录内容 —— 对目录执行 contentsOfDirectory 会触发 TCC 权限校验
+    /// 如果目录不存在或无权访问都返回 false，只有真正能读到内容才返回 true
+    private func canReadProtectedDirectory(_ path: String) -> Bool {
         do {
             _ = try FileManager.default.contentsOfDirectory(atPath: path)
             return true

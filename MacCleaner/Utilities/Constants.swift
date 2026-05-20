@@ -3,10 +3,10 @@ import CoreGraphics
 
 enum Constants {
     enum Scan {
-        static let batchFileThreshold = 50
+        static let batchFileThreshold = 200
         static let batchTimeThreshold: TimeInterval = 0.3
         static let largeFileThreshold: UInt64 = 100 * 1024 * 1024
-        static let maxConcurrentCleanTasks = 12
+        static let maxConcurrentCleanTasks = 24
         static let displayFileLimit = 500
     }
     

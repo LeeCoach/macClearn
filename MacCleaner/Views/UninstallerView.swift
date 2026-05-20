@@ -15,6 +15,7 @@ struct UninstallerView: View {
     @State private var showResidualSheet = false
     @State private var showBatchSheet = false
     @State private var showOrphanCleanSheet = false
+    @State private var selectedAppForDetail: InstalledApp?
     @State private var selectedAppForUninstall: InstalledApp?
     @State private var residualFiles: [ResidualFile] = []
     @State private var batchResidualFiles: [ResidualFile] = []
@@ -101,6 +102,9 @@ struct UninstallerView: View {
                 }
             }
         }
+        .sheet(item: $selectedAppForDetail) { app in
+            appDetailSheet(for: app)
+        }
         .sheet(isPresented: $showResidualSheet) {
             if let app = selectedAppForUninstall {
                 residualSheet(for: app)
@@ -123,9 +127,6 @@ struct UninstallerView: View {
 
     private var headerBar: some View {
         HStack {
-            Text(localization.text("uninstaller.title"))
-                .font(.title2)
-                .fontWeight(.semibold)
             Picker("", selection: $displayMode) {
                 Text(localization.text("uninstaller.mode.installed")).tag(UninstallerMode.installedApps)
                 Text(localization.text("uninstaller.mode.orphan")).tag(UninstallerMode.orphanResiduals)
@@ -211,26 +212,45 @@ struct UninstallerView: View {
                         .frame(width: 40, height: 40)
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(app.name)
-                        .fontWeight(.medium)
-                    Text(app.detailText(localization: localization))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Button {
+                    selectedAppForDetail = app
+                } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(app.name)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.primary)
+                                if app.url.pathExtension != "app" {
+                                    Text(bundleTypeLabel(for: app.url.pathExtension))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(.quaternary.opacity(0.5))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                            Text(app.detailText(localization: localization))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
 
-                Spacer()
+                        Spacer()
 
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(app.formattedSize)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if let date = app.lastAccessed {
-                        Text(dateFormatter.string(from: date))
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(app.formattedSize)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let date = app.lastAccessed {
+                                Text(dateFormatter.string(from: date))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
                     }
                 }
+                .buttonStyle(.plain)
 
                 Button {
                     prepareSingleUninstall(for: app)
@@ -296,6 +316,82 @@ struct UninstallerView: View {
             .padding(.vertical, 10)
         }
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    // 应用详情弹窗，展示完整信息避免误删
+    private func appDetailSheet(for app: InstalledApp) -> some View {
+        VStack(spacing: 24) {
+            if let icon = app.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 64, height: 64)
+            }
+
+            Text(app.name)
+                .font(.title)
+                .fontWeight(.bold)
+
+            if app.url.pathExtension != "app" {
+                Text(bundleTypeLabel(for: app.url.pathExtension))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(.quaternary.opacity(0.5))
+                    .clipShape(Capsule())
+            }
+
+            Divider()
+
+            VStack(spacing: 10) {
+                detailRow(label: localization.text("uninstaller.detail.bundleID"), value: app.bundleID)
+                detailRow(label: localization.text("uninstaller.detail.version"), value: app.version ?? "--")
+                detailRow(label: localization.text("uninstaller.detail.size"), value: app.formattedSize)
+                detailRow(label: localization.text("uninstaller.detail.path"), value: app.url.path)
+                if let date = app.lastAccessed {
+                    detailRow(label: localization.text("uninstaller.detail.lastAccess"), value: dateFormatter.string(from: date))
+                }
+            }
+
+            Spacer()
+
+            HStack(spacing: 12) {
+                Button(localization.text("common.close")) {
+                    selectedAppForDetail = nil
+                }
+                .keyboardShortcut(.cancelAction)
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+
+                Button {
+                    selectedAppForDetail = nil
+                    prepareSingleUninstall(for: app)
+                } label: {
+                    Label(localization.text("uninstaller.uninstall"), systemImage: "trash")
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.large)
+            }
+        }
+        .padding(24)
+        .frame(width: 400, height: 460)
+    }
+
+    private func detailRow(label: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 90, alignment: .trailing)
+            Text(value)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
     }
 
     // 单个应用卸载确认弹窗，展示残留文件列表
@@ -442,6 +538,22 @@ struct UninstallerView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             revealInFinderButton(for: file)
+        }
+    }
+
+    /// 将 bundle 扩展名映射为可读的类型标签
+    private func bundleTypeLabel(for ext: String) -> String {
+        switch ext {
+        case "plugin": return "Internet Plug-In"
+        case "service": return "Service"
+        case "prefPane": return "Preference Pane"
+        case "qlgenerator": return "QuickLook"
+        case "saver": return "Screen Saver"
+        case "inputMethod": return "Input Method"
+        case "ideplugin": return "IDE Plugin"
+        case "wkplugin": return "WebKit Plugin"
+        case "mdimporter": return "Spotlight Importer"
+        default: return ext
         }
     }
 
