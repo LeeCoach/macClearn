@@ -65,7 +65,7 @@ struct MemoryView: View {
         if scanner.memoryDetail == nil {
             scanner.scanMemory()
         }
-        refreshTimer = Timer.publish(every: 2, on: .main, in: .common)
+        refreshTimer = Timer.publish(every: Constants.Memory.autoRefreshInterval, on: .main, in: .common)
             .autoconnect()
             .sink { _ in
                 scanner.refreshQuietly()
@@ -158,7 +158,7 @@ struct MemoryView: View {
                     }
                     .frame(height: 20)
 
-                    Text(scanner.formatBytes(item.value))
+                    Text(ByteFormatter.shared.format(item.value))
                         .frame(width: 80, alignment: .trailing)
                         .font(.subheadline)
                         .monospacedDigit()
@@ -221,7 +221,7 @@ struct MemoryView: View {
                     Text(localization.text("memory.before"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(scanner.formatBytes(before))
+                    Text(ByteFormatter.shared.format(before))
                         .font(.title3)
                         .monospacedDigit()
                 }
@@ -234,14 +234,14 @@ struct MemoryView: View {
                     Text(localization.text("memory.after"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(scanner.formatBytes(after))
+                    Text(ByteFormatter.shared.format(after))
                         .font(.title3)
                         .monospacedDigit()
                 }
             }
 
             if freed > 0 {
-                Text(localization.text("memory.freed", scanner.formatBytes(freed)))
+                Text(localization.text("memory.freed", ByteFormatter.shared.format(freed)))
                     .font(.headline)
                     .foregroundStyle(.green)
             } else {

@@ -441,7 +441,20 @@ struct UninstallerView: View {
             Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            revealInFinderButton(for: file)
         }
+    }
+
+    private func revealInFinderButton(for file: ResidualFile) -> some View {
+        Button {
+            NSWorkspace.shared.activateFileViewerSelecting([file.url])
+        } label: {
+            Image(systemName: "arrowshape.turn.up.right.circle.fill")
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help(localization.text("uninstaller.revealInFinder"))
     }
 
     // 卸载/清理进行中的遮罩层
@@ -532,53 +545,99 @@ struct UninstallerView: View {
 
     // 孤立残留文件列表
     private var orphanResidualsList: some View {
-        List(viewModel.orphanResiduals) { file in
-            HStack(spacing: 12) {
-                Button {
-                    if viewModel.selectedOrphanResiduals.contains(file.id) {
-                        viewModel.selectedOrphanResiduals.remove(file.id)
-                    } else {
-                        viewModel.selectedOrphanResiduals.insert(file.id)
+        VStack(spacing: 0) {
+            orphanResidualsHeader
+            
+            Divider()
+            
+            List(viewModel.orphanResiduals) { file in
+                HStack(spacing: 12) {
+                    Button {
+                        toggleOrphanResidualSelection(file)
+                    } label: {
+                        Image(systemName: viewModel.selectedOrphanResiduals.contains(file.id) ? "checkmark.square.fill" : "square")
+                            .font(.title3)
+                            .foregroundStyle(viewModel.selectedOrphanResiduals.contains(file.id) ? Color.accentColor : .secondary)
                     }
-                } label: {
-                    Image(systemName: viewModel.selectedOrphanResiduals.contains(file.id) ? "checkmark.square.fill" : "square")
-                        .font(.title3)
-                        .foregroundStyle(viewModel.selectedOrphanResiduals.contains(file.id) ? Color.accentColor : .secondary)
+                    .buttonStyle(.plain)
+
+                    HStack(spacing: 12) {
+                        Image(systemName: file.isProtected ? "lock.fill" : "doc")
+                            .foregroundStyle(file.isProtected ? .orange : .secondary)
+                            .frame(width: 24)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(file.name)
+                                .fontWeight(.medium)
+                            Text(localization.text("uninstaller.orphanHint"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        toggleOrphanResidualSelection(file)
+                    }
+
+                    revealInFinderButton(for: file)
+
+                    Button {
+                        viewModel.selectedOrphanResiduals = [file.id]
+                        showOrphanCleanSheet = true
+                    } label: {
+                        Text(localization.text("uninstaller.clean"))
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.plain)
-
-                Image(systemName: file.isProtected ? "lock.fill" : "doc")
-                    .foregroundStyle(file.isProtected ? .orange : .secondary)
-                    .frame(width: 24)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(file.name)
-                        .fontWeight(.medium)
-                    Text(localization.text("uninstaller.orphanHint"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    viewModel.selectedOrphanResiduals = [file.id]
-                    showOrphanCleanSheet = true
-                } label: {
-                    Text(localization.text("uninstaller.clean"))
-                        .font(.caption)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.orange)
-                .controlSize(.small)
+                .padding(.vertical, 4)
             }
-            .padding(.vertical, 4)
+            .listStyle(.inset)
         }
-        .listStyle(.inset)
+    }
+    
+    private var orphanResidualsHeader: some View {
+        HStack {
+            let allSelected = !viewModel.orphanResiduals.isEmpty && viewModel.selectedOrphanResiduals.count == viewModel.orphanResiduals.count
+            Button {
+                if allSelected {
+                    viewModel.selectedOrphanResiduals.removeAll()
+                } else {
+                    viewModel.selectedOrphanResiduals = Set(viewModel.orphanResiduals.map(\.id))
+                }
+            } label: {
+                HStack {
+                    Image(systemName: allSelected ? "checkmark.square.fill" : "square")
+                        .font(.title3)
+                        .foregroundStyle(allSelected ? Color.accentColor : .secondary)
+                    Text(allSelected ? localization.text("uninstaller.deselectAllResiduals") : localization.text("uninstaller.selectAllResiduals"))
+                        .font(.caption)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.orphanResiduals.isEmpty)
+            
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func toggleOrphanResidualSelection(_ file: ResidualFile) {
+        if viewModel.selectedOrphanResiduals.contains(file.id) {
+            viewModel.selectedOrphanResiduals.remove(file.id)
+        } else {
+            viewModel.selectedOrphanResiduals.insert(file.id)
+        }
     }
 
     // 孤立残留底部批量操作栏
@@ -640,6 +699,7 @@ struct UninstallerView: View {
                                 Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
+                                revealInFinderButton(for: file)
                             }
                         }
                     }

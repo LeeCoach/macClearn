@@ -1,2 +1,0 @@
-Target dependency graph (1 target)
-Target 'MacCleaner' in project 'MacCleaner' (no dependencies)

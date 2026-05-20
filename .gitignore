@@ -1,7 +1,7 @@
 /.trae
 /.build
-macCleaner/build
+/build
 /.reasonix
 /dist
-/.swiftpm
-.swiftpm/xcode
+# SwiftPM / Xcode 自动生成的本地工作区（含 xcuserdata）
+.swiftpm/

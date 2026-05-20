@@ -30,7 +30,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" MacCleaner/Info.plist)
+            VERSION=$(grep 'static let marketing' MacCleaner/Version.swift | sed -E 's/.*"([^"]+)".*/\1/')
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Resolved version: ${VERSION}"
@@ -40,6 +40,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" MacCleaner/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" MacCleaner/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" MacCleaner/Info.plist
 
       - name: Show Xcode toolchain
         run: xcodebuild -version && swift --version
@@ -76,6 +77,9 @@ jobs:
           cp "${APP_NAME}/Resources/SidebarIcon.png" "${APP_BUNDLE}/Contents/Resources/"
 
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${APP_NAME}" "${APP_BUNDLE}/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.maccleaner.app" "${APP_BUNDLE}/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName MacCleaner" "${APP_BUNDLE}/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName MacCleaner" "${APP_BUNDLE}/Contents/Info.plist"
           rm -rf "${APP_BUNDLE}/Contents/_CodeSignature"
           chmod +x "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 

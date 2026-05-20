@@ -71,7 +71,7 @@ struct DashboardView: View {
             memoryCleanupSucceeded = true
 
             if let before = memoryScanner.beforeMemory, let after = memoryScanner.afterMemory, after > before {
-                memoryCleanupMessage = localization.text("dashboard.cleanMemory.doneWithAmount", formatBytes(after - before))
+                memoryCleanupMessage = localization.text("dashboard.cleanMemory.doneWithAmount", ByteFormatter.shared.format(after - before))
             } else {
                 memoryCleanupMessage = localization.text("dashboard.cleanMemory.done")
             }
@@ -133,7 +133,7 @@ struct DashboardView: View {
 
             StatusCard(
                 title: localization.text("dashboard.memory"),
-                value: "\(formatBytes(systemInfo.memoryUsed)) / \(formatBytes(systemInfo.memoryTotal))",
+                value: "\(ByteFormatter.shared.format(systemInfo.memoryUsed)) / \(ByteFormatter.shared.format(systemInfo.memoryTotal))",
                 progress: systemInfo.memoryUsage,
                 color: memoryColor,
                 icon: "memorychip"
@@ -141,7 +141,7 @@ struct DashboardView: View {
 
             StatusCard(
                 title: localization.text("dashboard.disk"),
-                value: "\(formatBytes(systemInfo.diskUsed)) / \(formatBytes(systemInfo.diskTotal))",
+                value: "\(ByteFormatter.shared.format(systemInfo.diskUsed)) / \(ByteFormatter.shared.format(systemInfo.diskTotal))",
                 progress: systemInfo.diskUsage,
                 color: diskColor,
                 icon: "internaldrive"
@@ -149,7 +149,7 @@ struct DashboardView: View {
 
             StatusCard(
                 title: localization.text("dashboard.diskFree"),
-                value: formatBytes(systemInfo.diskFree),
+                value: ByteFormatter.shared.format(systemInfo.diskFree),
                 progress: systemInfo.diskTotal > 0 ? 1.0 - systemInfo.diskUsage : 0,
                 color: .green,
                 icon: "externaldrive"
@@ -175,7 +175,7 @@ struct DashboardView: View {
                             .foregroundStyle(.secondary)
                     }
                 } else if diskScanner.hasCompletedScan {
-                    Text(formatBytes(diskScanner.totalCleanableSize))
+                    Text(ByteFormatter.shared.format(diskScanner.totalCleanableSize))
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundStyle(.orange)
@@ -304,18 +304,6 @@ struct DashboardView: View {
                 systemInfo.refresh()
             }
         }
-    }
-
-    // 将字节数格式化为人类可读的大小字符串
-    private func formatBytes(_ bytes: UInt64) -> String {
-        let units = ["B", "KB", "MB", "GB", "TB"]
-        var value = Double(bytes)
-        var unitIndex = 0
-        while value >= 1024 && unitIndex < units.count - 1 {
-            value /= 1024
-            unitIndex += 1
-        }
-        return String(format: "%.1f %@", value, units[unitIndex])
     }
 }
 

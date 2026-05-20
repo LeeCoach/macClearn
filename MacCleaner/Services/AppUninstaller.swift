@@ -435,7 +435,7 @@ class AppUninstaller: ObservableObject {
                         try FileManager.default.trashItem(at: task.url, resultingItemURL: &resultURL)
                         return task
                     } catch {
-                        print("无法移除 \(task.url.path): \(error.localizedDescription)")
+                        AppLogger.error(error, context: "无法移除 \(task.url.path)", log: .uninstaller)
                         return nil
                     }
                 }
@@ -496,6 +496,24 @@ class AppUninstaller: ObservableObject {
             names: Set(apps.map(\.name).filter { !$0.isEmpty })
         )
     }
+    
+    private static func scanInstalledAppsSync() -> [InstalledApp] {
+        var apps: [InstalledApp] = []
+        var seenURLs: Set<URL> = []
+
+        for appURL in Self.discoverApplicationURLs() {
+            let standardizedURL = appURL.standardizedFileURL
+            guard !seenURLs.contains(standardizedURL) else { continue }
+            seenURLs.insert(standardizedURL)
+
+            if let app = Self.installedApp(at: standardizedURL) {
+                apps.append(app)
+            }
+        }
+
+        apps.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        return apps
+    }
 
     private static func bundleIdentifierCandidate(from filename: String, stripExtensions: [String]) -> String? {
         var candidate = filename
@@ -551,184 +569,202 @@ class AppUninstaller: ObservableObject {
         selectedOrphanResiduals = []
         currentOrphanScanPath = "~/Library"
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            let fm = FileManager.default
-            let home = fm.homeDirectoryForCurrentUser
-            let library = home.appendingPathComponent("Library")
+        Task {
+            await scanOrphanResidualsAsync()
+        }
+    }
+    
+    private func scanOrphanResidualsAsync() async {
+        if installedApps.isEmpty {
+            await MainActor.run {
+                isScanning = true
+            }
+            let apps = await Task.detached(priority: .userInitiated) {
+                Self.scanInstalledAppsSync()
+            }.value
+            await MainActor.run {
+                installedApps = apps
+                filteredApps = apps
+                isScanning = false
+            }
+        }
+        
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        let library = home.appendingPathComponent("Library")
 
-            let installedIndex = Self.installedAppIndex(from: self.installedApps)
+        let installedIndex = Self.installedAppIndex(from: installedApps)
 
-            var residuals: [ResidualFile] = []
+        var residuals: [ResidualFile] = []
 
-            let scanRules: [OrphanScanRule] = [
-                OrphanScanRule(
-                    subpath: "Caches",
-                    requiresDirectory: nil,
-                    isProtected: false,
-                    allowedExtensions: [],
-                    requireBundleIdentifier: true,
-                    stripExtensions: []
-                ),
-                OrphanScanRule(
-                    subpath: "Preferences",
-                    requiresDirectory: false,
-                    isProtected: false,
-                    allowedExtensions: ["plist"],
-                    requireBundleIdentifier: true,
-                    stripExtensions: ["plist"]
-                ),
-                OrphanScanRule(
-                    subpath: "Saved Application State",
-                    requiresDirectory: true,
-                    isProtected: false,
-                    allowedExtensions: ["savedState"],
-                    requireBundleIdentifier: true,
-                    stripExtensions: ["savedState"]
-                ),
-                OrphanScanRule(
-                    subpath: "HTTPStorages",
-                    requiresDirectory: nil,
-                    isProtected: false,
-                    allowedExtensions: [],
-                    requireBundleIdentifier: true,
-                    stripExtensions: []
-                ),
-                OrphanScanRule(
-                    subpath: "WebKit",
-                    requiresDirectory: true,
-                    isProtected: false,
-                    allowedExtensions: [],
-                    requireBundleIdentifier: true,
-                    stripExtensions: []
-                ),
-                OrphanScanRule(
-                    subpath: "Containers",
-                    requiresDirectory: true,
-                    isProtected: true,
-                    allowedExtensions: [],
-                    requireBundleIdentifier: true,
-                    stripExtensions: []
-                ),
-                OrphanScanRule(
-                    subpath: "Group Containers",
-                    requiresDirectory: true,
-                    isProtected: true,
-                    allowedExtensions: [],
-                    requireBundleIdentifier: true,
-                    stripExtensions: []
-                )
-            ]
+        let scanRules: [OrphanScanRule] = [
+            OrphanScanRule(
+                subpath: "Caches",
+                requiresDirectory: nil,
+                isProtected: false,
+                allowedExtensions: [],
+                requireBundleIdentifier: true,
+                stripExtensions: []
+            ),
+            OrphanScanRule(
+                subpath: "Preferences",
+                requiresDirectory: false,
+                isProtected: false,
+                allowedExtensions: ["plist"],
+                requireBundleIdentifier: true,
+                stripExtensions: ["plist"]
+            ),
+            OrphanScanRule(
+                subpath: "Saved Application State",
+                requiresDirectory: true,
+                isProtected: false,
+                allowedExtensions: ["savedState"],
+                requireBundleIdentifier: true,
+                stripExtensions: ["savedState"]
+            ),
+            OrphanScanRule(
+                subpath: "HTTPStorages",
+                requiresDirectory: nil,
+                isProtected: false,
+                allowedExtensions: [],
+                requireBundleIdentifier: true,
+                stripExtensions: []
+            ),
+            OrphanScanRule(
+                subpath: "WebKit",
+                requiresDirectory: true,
+                isProtected: false,
+                allowedExtensions: [],
+                requireBundleIdentifier: true,
+                stripExtensions: []
+            ),
+            OrphanScanRule(
+                subpath: "Containers",
+                requiresDirectory: true,
+                isProtected: true,
+                allowedExtensions: [],
+                requireBundleIdentifier: true,
+                stripExtensions: []
+            ),
+            OrphanScanRule(
+                subpath: "Group Containers",
+                requiresDirectory: true,
+                isProtected: true,
+                allowedExtensions: [],
+                requireBundleIdentifier: true,
+                stripExtensions: []
+            )
+        ]
 
-            for rule in scanRules {
-                DispatchQueue.main.async {
-                    self.currentOrphanScanPath = "~/Library/\(rule.subpath)"
+        for rule in scanRules {
+            await MainActor.run {
+                self.currentOrphanScanPath = "~/Library/\(rule.subpath)"
+            }
+            let dir = library.appendingPathComponent(rule.subpath)
+            guard let contents = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles) else {
+                continue
+            }
+
+            for fileURL in contents {
+                let filename = fileURL.lastPathComponent
+
+                if let requiresDirectory = rule.requiresDirectory {
+                    guard let values = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
+                          let isDirectory = values.isDirectory,
+                          isDirectory == requiresDirectory else {
+                        continue
+                    }
                 }
-                let dir = library.appendingPathComponent(rule.subpath)
-                guard let contents = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey], options: .skipsHiddenFiles) else {
+
+                guard let candidateIdentifier = Self.bundleIdentifierCandidate(
+                    from: filename,
+                    stripExtensions: rule.stripExtensions
+                ) else { continue }
+
+                if rule.requireBundleIdentifier && !Self.looksLikeBundleIdentifier(candidateIdentifier) {
                     continue
                 }
 
-                for fileURL in contents {
-                    let filename = fileURL.lastPathComponent
-
-                    if let requiresDirectory = rule.requiresDirectory {
-                        guard let values = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
-                              let isDirectory = values.isDirectory,
-                              isDirectory == requiresDirectory else {
-                            continue
-                        }
-                    }
-
-                    guard let candidateIdentifier = Self.bundleIdentifierCandidate(
-                        from: filename,
-                        stripExtensions: rule.stripExtensions
-                    ) else { continue }
-
-                    if rule.requireBundleIdentifier && !Self.looksLikeBundleIdentifier(candidateIdentifier) {
-                        continue
-                    }
-
-                    if !rule.allowedExtensions.isEmpty && !rule.allowedExtensions.contains(fileURL.pathExtension) {
-                        continue
-                    }
-
-                    if Self.isAppleOrSystemIdentifier(candidateIdentifier) { continue }
-                    if Self.matchesInstalledApp(candidateIdentifier, index: installedIndex) { continue }
-
-                    let size = Self.itemSize(at: fileURL)
-
-                    if size == 0 { continue }
-
-                    residuals.append(ResidualFile(
-                        id: fileURL,
-                        url: fileURL,
-                        name: "\(rule.subpath)/\(filename)",
-                        size: size,
-                        isProtected: rule.isProtected
-                    ))
+                if !rule.allowedExtensions.isEmpty && !rule.allowedExtensions.contains(fileURL.pathExtension) {
+                    continue
                 }
+
+                if Self.isAppleOrSystemIdentifier(candidateIdentifier) { continue }
+                if Self.matchesInstalledApp(candidateIdentifier, index: installedIndex) { continue }
+
+                let size = Self.itemSize(at: fileURL)
+
+                if size == 0 { continue }
+
+                residuals.append(ResidualFile(
+                    id: fileURL,
+                    url: fileURL,
+                    name: "\(rule.subpath)/\(filename)",
+                    size: size,
+                    isProtected: rule.isProtected
+                ))
             }
+        }
 
-            DispatchQueue.main.async {
-                self.currentOrphanScanPath = "~/Library/LaunchAgents"
+        await MainActor.run {
+            self.currentOrphanScanPath = "~/Library/LaunchAgents"
+        }
+        let launchAgentsDir = library.appendingPathComponent("LaunchAgents")
+        if let contents = try? fm.contentsOfDirectory(at: launchAgentsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+            for fileURL in contents {
+                let filename = fileURL.lastPathComponent
+                guard fileURL.pathExtension == "plist",
+                      let candidateIdentifier = Self.bundleIdentifierCandidate(from: filename, stripExtensions: ["plist"]),
+                      Self.looksLikeBundleIdentifier(candidateIdentifier),
+                      !Self.isAppleOrSystemIdentifier(candidateIdentifier),
+                      !Self.matchesInstalledApp(candidateIdentifier, index: installedIndex) else { continue }
+
+                let size = Self.itemSize(at: fileURL)
+                if size == 0 { continue }
+
+                residuals.append(ResidualFile(
+                    id: fileURL,
+                    url: fileURL,
+                    name: "LaunchAgents/\(filename)",
+                    size: size,
+                    isProtected: false
+                ))
             }
-            let launchAgentsDir = library.appendingPathComponent("LaunchAgents")
-            if let contents = try? fm.contentsOfDirectory(at: launchAgentsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
-                for fileURL in contents {
-                    let filename = fileURL.lastPathComponent
-                    guard fileURL.pathExtension == "plist",
-                          let candidateIdentifier = Self.bundleIdentifierCandidate(from: filename, stripExtensions: ["plist"]),
-                          Self.looksLikeBundleIdentifier(candidateIdentifier),
-                          !Self.isAppleOrSystemIdentifier(candidateIdentifier),
-                          !Self.matchesInstalledApp(candidateIdentifier, index: installedIndex) else { continue }
+        }
 
-                    let size = Self.itemSize(at: fileURL)
-                    if size == 0 { continue }
+        await MainActor.run {
+            self.currentOrphanScanPath = "~/Library/Logs"
+        }
+        let logsDir = library.appendingPathComponent("Logs")
+        if let contents = try? fm.contentsOfDirectory(at: logsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+            for fileURL in contents {
+                let filename = fileURL.lastPathComponent
+                guard let candidateIdentifier = Self.bundleIdentifierCandidate(from: filename, stripExtensions: ["log"]),
+                      Self.looksLikeBundleIdentifier(candidateIdentifier),
+                      !Self.isAppleOrSystemIdentifier(candidateIdentifier),
+                      !Self.matchesInstalledApp(candidateIdentifier, index: installedIndex) else { continue }
 
-                    residuals.append(ResidualFile(
-                        id: fileURL,
-                        url: fileURL,
-                        name: "LaunchAgents/\(filename)",
-                        size: size,
-                        isProtected: false
-                    ))
-                }
+                let size = Self.itemSize(at: fileURL)
+                if size == 0 { continue }
+
+                residuals.append(ResidualFile(
+                    id: fileURL,
+                    url: fileURL,
+                    name: "Logs/\(filename)",
+                    size: size,
+                    isProtected: false
+                ))
             }
+        }
 
-            DispatchQueue.main.async {
-                self.currentOrphanScanPath = "~/Library/Logs"
-            }
-            let logsDir = library.appendingPathComponent("Logs")
-            if let contents = try? fm.contentsOfDirectory(at: logsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
-                for fileURL in contents {
-                    let filename = fileURL.lastPathComponent
-                    guard let candidateIdentifier = Self.bundleIdentifierCandidate(from: filename, stripExtensions: ["log"]),
-                          Self.looksLikeBundleIdentifier(candidateIdentifier),
-                          !Self.isAppleOrSystemIdentifier(candidateIdentifier),
-                          !Self.matchesInstalledApp(candidateIdentifier, index: installedIndex) else { continue }
+        residuals.sort { $0.size > $1.size }
+        let finalResiduals = residuals
 
-                    let size = Self.itemSize(at: fileURL)
-                    if size == 0 { continue }
-
-                    residuals.append(ResidualFile(
-                        id: fileURL,
-                        url: fileURL,
-                        name: "Logs/\(filename)",
-                        size: size,
-                        isProtected: false
-                    ))
-                }
-            }
-
-            residuals.sort { $0.size > $1.size }
-
-            DispatchQueue.main.async {
-                self.orphanResiduals = residuals
-                self.selectedOrphanResiduals = Set(residuals.filter(\.isSelectedByDefault).map(\.id))
-                self.isScanningOrphans = false
-                self.currentOrphanScanPath = ""
-            }
+        await MainActor.run {
+            self.orphanResiduals = finalResiduals
+            self.selectedOrphanResiduals = Set(finalResiduals.filter(\.isSelectedByDefault).map(\.id))
+            self.isScanningOrphans = false
+            self.currentOrphanScanPath = ""
         }
     }
 

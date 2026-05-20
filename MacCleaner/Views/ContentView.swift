@@ -49,9 +49,9 @@ struct ContentView: View {
                                 .controlSize(.small)
                         }
 
-                        // 磁盘项显示可清理空间大小
-                        if item == .disk && !diskScanner.isScanning && diskScanner.totalCleanableSize > 0 {
-                            Text(formatSize(diskScanner.totalCleanableSize))
+                        // 磁盘项显示可清理空间大小（仅在有权限时显示）
+                        if item == .disk && permissionManager.hasFullDiskAccess && !diskScanner.isScanning && diskScanner.totalCleanableSize > 0 {
+                            Text(ByteFormatter.shared.format(diskScanner.totalCleanableSize, includeSpace: false))
                                 .font(.caption2)
                                 .foregroundStyle(.orange)
                                 .monospacedDigit()
@@ -85,6 +85,7 @@ struct ContentView: View {
                     Color.black.opacity(0.4)
                         .ignoresSafeArea()
 
+                    //
                     PermissionGuideView(permissionManager: permissionManager) {
                         startDiskScanIfNeeded()
                     }
@@ -97,23 +98,11 @@ struct ContentView: View {
         .task {
             if didAutoScan { return }
             didAutoScan = true
-            try? await Task.sleep(nanoseconds: 800_000_000)
+            try? await Task.sleep(nanoseconds: Constants.UI.autoScanDelay)
             if permissionManager.hasFullDiskAccess && !diskScanner.isScanning {
                 await diskScanner.scanDisk(excludedPaths: permissionManager.excludedPaths)
             }
         }
-    }
-
-    // 将字节数格式化为人类可读的大小字符串
-    private func formatSize(_ bytes: UInt64) -> String {
-        let units = ["B", "KB", "MB", "GB", "TB"]
-        var value = Double(bytes)
-        var unitIndex = 0
-        while value >= 1024 && unitIndex < units.count - 1 {
-            value /= 1024
-            unitIndex += 1
-        }
-        return String(format: "%.1f%@", value, units[unitIndex])
     }
 
     private func startDiskScanIfNeeded() {

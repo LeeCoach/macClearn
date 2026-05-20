@@ -24,15 +24,15 @@
 | Item | Link |
 |------|------|
 | **Latest release** | https://github.com/LeeCoach/macClearn/releases/latest |
-| **Installer (DMG)** | [MacCleaner-1.2.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.2.0/MacCleaner-1.2.0.dmg) (~1.0 MB) |
+| **Installer (DMG)** | [MacCleaner-1.3.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.3.0/MacCleaner-1.3.0.dmg) (~1.0 MB) |
 | **All releases** | https://github.com/LeeCoach/macClearn/releases |
 
-> DMG installers are built automatically by GitHub Actions when a version tag (e.g. `v1.2.0`) is pushed. See [Release workflow](#release-workflow).  
+> DMG installers are built automatically by GitHub Actions when a version tag (e.g. `v1.3.0`) is pushed. See [Release workflow](#release-workflow).  
 > Each DMG contains **MacCleaner.app** and an **Applications** shortcut for drag-and-drop installation.
 
 ### Install
 
-1. Download **MacCleaner-1.2.0.dmg** (~1.0 MB) from [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.2.0) (or use **Latest** above).
+1. Download **MacCleaner-1.3.0.dmg** (~1.0 MB) from [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.3.0) (or use **Latest** above).
 2. Open the DMG, then drag **MacCleaner** into the **Applications** folder shown in the window.
 3. Launch MacCleaner from Applications. If macOS shows an unidentified-developer warning, open **System Settings → Privacy & Security** and choose **Open Anyway**.
 4. For disk cleanup, grant **Full Disk Access** when prompted (see [Permissions](#permissions) below).
@@ -45,7 +45,7 @@ macOS **Gatekeeper** may block unsigned or un-notarized apps downloaded from the
 
 ```bash
 # Remove quarantine flag (adjust path if needed)
-xattr -cr ~/Downloads/MacCleaner-1.2.0.dmg
+xattr -cr ~/Downloads/MacCleaner-1.3.0.dmg
 xattr -cr /Applications/MacCleaner.app
 ```
 
@@ -152,7 +152,7 @@ macClearn/
 
 ### Version
 
-**1.2.0** · Bundle ID: `com.leecoach.maccleaner`
+**1.3.0** · Bundle ID: `com.maccleaner.app`
 
 ### Release workflow
 
@@ -162,12 +162,12 @@ Pushing a **semver tag** triggers [`.github/workflows/build.yml`](.github/workfl
 # 1. Bump version in MacCleaner/Info.plist and MacCleaner/Version.swift
 # 2. Commit and push to main
 git add MacCleaner/Info.plist MacCleaner/Version.swift README.md
-git commit -m "chore: release 1.2.0"
+git commit -m "chore: release 1.3.0"
 git push origin main
 
 # 3. Create and push tag (must match Info.plist version, prefix with v)
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.3.0
+git push origin v1.3.0
 ```
 
 After the workflow succeeds, download the DMG from **Releases**. Tag name and `CFBundleShortVersionString` should stay in sync.
@@ -181,15 +181,15 @@ After the workflow succeeds, download the DMG from **Releases**. Tag name and `C
 | 项目 | 链接 |
 |------|------|
 | **最新版本** | https://github.com/LeeCoach/macClearn/releases/latest |
-| **安装包（DMG）** | [MacCleaner-1.2.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.2.0/MacCleaner-1.2.0.dmg)（约 1.0 MB） |
+| **安装包（DMG）** | [MacCleaner-1.3.0.dmg](https://github.com/LeeCoach/macClearn/releases/download/v1.3.0/MacCleaner-1.3.0.dmg)（约 1.0 MB） |
 | **全部版本** | https://github.com/LeeCoach/macClearn/releases |
 
-> 推送版本 tag（如 `v1.2.0`）后，GitHub Actions 会自动构建 DMG 并发布到 Releases。详见 [发布流程](#发布流程)。  
+> 推送版本 tag（如 `v1.3.0`）后，GitHub Actions 会自动构建 DMG 并发布到 Releases。详见 [发布流程](#发布流程)。  
 > 安装包内含 **MacCleaner.app** 与 **应用程序（Applications）** 快捷方式，支持拖放安装。
 
 ### 安装步骤
 
-1. 从 [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.2.0) 下载 **MacCleaner-1.2.0.dmg**（约 1.0 MB，或使用上方的 **Latest**）。
+1. 从 [Releases](https://github.com/LeeCoach/macClearn/releases/tag/v1.3.0) 下载 **MacCleaner-1.3.0.dmg**（约 1.0 MB，或使用上方的 **Latest**）。
 2. 打开镜像，将 **MacCleaner** 拖入窗口中的 **应用程序** 文件夹。
 3. 从启动台或应用程序文件夹打开 MacCleaner。若提示「无法验证开发者」，请到 **系统设置 → 隐私与安全性** 选择 **仍要打开**。
 4. 使用磁盘清理前，按提示授予 **完全磁盘访问权限**（见下方 [权限说明](#权限说明)）。
@@ -202,7 +202,7 @@ After the workflow succeeds, download the DMG from **Releases**. Tag name and `C
 
 ```bash
 # 清除隔离属性（路径按实际下载位置修改）
-xattr -cr ~/Downloads/MacCleaner-1.2.0.dmg
+xattr -cr ~/Downloads/MacCleaner-1.3.0.dmg
 xattr -cr /Applications/MacCleaner.app
 ```
 
@@ -309,7 +309,7 @@ macClearn/
 
 ### 版本信息
 
-**1.2.0** · Bundle ID：`com.leecoach.maccleaner`
+**1.3.0** · Bundle ID：`com.maccleaner.app`
 
 ### 发布流程
 
@@ -319,12 +319,12 @@ macClearn/
 # 1. 更新 MacCleaner/Info.plist 与 MacCleaner/Version.swift 中的版本号
 # 2. 提交并推送到 main
 git add MacCleaner/Info.plist MacCleaner/Version.swift README.md
-git commit -m "chore: release 1.2.0"
+git commit -m "chore: release 1.3.0"
 git push origin main
 
 # 3. 创建并推送 tag（须与 Info.plist 一致，前缀 v）
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.3.0
+git push origin v1.3.0
 ```
 
 工作流完成后，在 **Releases** 页面下载 DMG。tag 名称应与 `CFBundleShortVersionString` 保持一致。

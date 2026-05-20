@@ -64,6 +64,7 @@ extension LocalizationManager {
             "settings.general.tab": "通用",
             "settings.about.tab": "关于",
             "settings.version": "版本 %@",
+            "settings.bundleId": "Bundle ID：%@",
 
             "nav.dashboard": "仪表盘",
             "nav.memory": "内存清理",
@@ -150,6 +151,9 @@ extension LocalizationManager {
             "disk.lastScan": "上次扫描：%@",
             "disk.noResults.title": "未发现可清理文件",
             "disk.noResults.message": "当前扫描范围内没有找到可清理项目。您可以调整排除列表后重新扫描。",
+            "disk.noPermission.title": "需要磁盘访问权限",
+            "disk.noPermission.message": "MacCleaner 需要完全磁盘访问权限才能显示和管理可清理的文件。请先授权访问权限。",
+            "disk.noPermission.button": "授权访问权限",
 
             "category.caches": "缓存文件",
             "category.logs": "日志文件",
@@ -161,12 +165,15 @@ extension LocalizationManager {
             "category.largeFiles": "大文件",
 
             "permission.title": "需要完全磁盘访问权限",
-            "permission.message": "MacCleaner 需要完全磁盘访问权限才能扫描和清理系统文件。",
-            "permission.step1": "点击下方按钮打开「系统设置」",
-            "permission.step2": "前往「隐私与安全性」→「完全磁盘访问权限」",
-            "permission.step3": "在列表中找到并启用 MacCleaner",
-            "permission.step4": "重新启动 MacCleaner",
+            "permission.message": "MacCleaner 需要完全磁盘访问权限才能扫描和清理系统文件。系统不会自动显示本应用，需手动添加。",
+            "permission.installHint": "请先将 MacCleaner 拖入「应用程序」后再授权；若从 DMG 直接运行，设置列表中可能找不到应用。",
+            "permission.step1": "将 MacCleaner 安装到「应用程序」文件夹（从 DMG 拖入即可）",
+            "permission.step2": "点击「打开系统设置」，进入「隐私与安全性」→「完全磁盘访问权限」",
+            "permission.step3": "点击列表左下角 + 号（若已锁定请先解锁）",
+            "permission.step4": "点击「在 Finder 中显示」，选择「应用程序」中的 MacCleaner，并勾选启用",
+            "permission.step5": "返回本应用，点击「重新检测」",
             "permission.openSettings": "打开系统设置",
+            "permission.revealApp": "在 Finder 中显示",
             "permission.recheck": "重新检测",
             "permission.granted": "权限已授予",
             "excluded.title": "排除列表",
@@ -210,7 +217,8 @@ extension LocalizationManager {
             "uninstaller.orphanCleanTitle": "清理卸载残留",
             "uninstaller.orphanCleanMessage": "将清理 %d 个残留文件，共 %@。文件将移入废纸篓。",
             "uninstaller.preparingResiduals": "正在查找残留文件…",
-            "uninstaller.operationProgress": "%d / %d 已完成"
+            "uninstaller.operationProgress": "%d / %d 已完成",
+            "uninstaller.revealInFinder": "在 Finder 中显示"
         ],
 
         .english: [
@@ -227,6 +235,7 @@ extension LocalizationManager {
             "settings.general.tab": "General",
             "settings.about.tab": "About",
             "settings.version": "Version %@",
+            "settings.bundleId": "Bundle ID: %@",
 
             "nav.dashboard": "Dashboard",
             "nav.memory": "Memory Cleaner",
@@ -313,6 +322,9 @@ extension LocalizationManager {
             "disk.lastScan": "Last scan: %@",
             "disk.noResults.title": "No Cleanable Files Found",
             "disk.noResults.message": "No cleanable items were found in the current scan scope. Adjust excluded paths and scan again if needed.",
+            "disk.noPermission.title": "Disk Access Required",
+            "disk.noPermission.message": "MacCleaner needs Full Disk Access permission to display and manage cleanable files. Please grant access permission first.",
+            "disk.noPermission.button": "Grant Access Permission",
 
             "category.caches": "Cache Files",
             "category.logs": "Log Files",
@@ -324,12 +336,15 @@ extension LocalizationManager {
             "category.largeFiles": "Large Files",
 
             "permission.title": "Full Disk Access Required",
-            "permission.message": "MacCleaner needs Full Disk Access to scan and clean system files.",
-            "permission.step1": "Click the button below to open System Settings",
-            "permission.step2": "Go to Privacy & Security -> Full Disk Access",
-            "permission.step3": "Find and enable MacCleaner in the list",
-            "permission.step4": "Restart MacCleaner",
+            "permission.message": "MacCleaner needs Full Disk Access to scan and clean system files. macOS will not list the app automatically—you must add it manually.",
+            "permission.installHint": "Install MacCleaner to Applications first. Running directly from the DMG may prevent the app from appearing in the list.",
+            "permission.step1": "Install MacCleaner to Applications (drag from the DMG)",
+            "permission.step2": "Open System Settings -> Privacy & Security -> Full Disk Access",
+            "permission.step3": "Click the + button at the bottom (unlock first if needed)",
+            "permission.step4": "Use Show in Finder, select MacCleaner in Applications, then enable the checkbox",
+            "permission.step5": "Return here and click Check Again",
             "permission.openSettings": "Open System Settings",
+            "permission.revealApp": "Show in Finder",
             "permission.recheck": "Check Again",
             "permission.granted": "Permission Granted",
             "excluded.title": "Excluded Paths",
@@ -373,7 +388,8 @@ extension LocalizationManager {
             "uninstaller.orphanCleanTitle": "Clean Leftovers",
             "uninstaller.orphanCleanMessage": "Will clean %d leftover files, %@ total. Files will be moved to Trash.",
             "uninstaller.preparingResiduals": "Finding leftover files…",
-            "uninstaller.operationProgress": "%d / %d completed"
+            "uninstaller.operationProgress": "%d / %d completed",
+            "uninstaller.revealInFinder": "Reveal in Finder"
         ],
 
         .traditionalChinese: [
@@ -390,6 +406,7 @@ extension LocalizationManager {
             "settings.general.tab": "一般",
             "settings.about.tab": "關於",
             "settings.version": "版本 %@",
+            "settings.bundleId": "Bundle ID：%@",
 
             "nav.dashboard": "儀表板",
             "nav.memory": "記憶體清理",
@@ -476,6 +493,9 @@ extension LocalizationManager {
             "disk.lastScan": "上次掃描：%@",
             "disk.noResults.title": "未發現可清理檔案",
             "disk.noResults.message": "目前掃描範圍內沒有找到可清理項目。您可以調整排除列表後重新掃描。",
+            "disk.noPermission.title": "需要磁碟存取權限",
+            "disk.noPermission.message": "MacCleaner 需要完整磁碟存取權限才能顯示和管理可清理的檔案。請先授權存取權限。",
+            "disk.noPermission.button": "授權存取權限",
 
             "category.caches": "快取檔案",
             "category.logs": "日誌檔案",
@@ -487,12 +507,15 @@ extension LocalizationManager {
             "category.largeFiles": "大檔案",
 
             "permission.title": "需要完整磁碟存取權限",
-            "permission.message": "MacCleaner 需要完整磁碟存取權限才能掃描和清理系統檔案。",
-            "permission.step1": "點擊下方按鈕開啟「系統設定」",
-            "permission.step2": "前往「隱私權與安全性」->「完整磁碟存取權限」",
-            "permission.step3": "在列表中找到並啟用 MacCleaner",
-            "permission.step4": "重新啟動 MacCleaner",
+            "permission.message": "MacCleaner 需要完整磁碟存取權限才能掃描和清理系統檔案。系統不會自動顯示本 App，需手動新增。",
+            "permission.installHint": "請先將 MacCleaner 拖入「應用程式」後再授權；若從 DMG 直接執行，設定列表中可能找不到 App。",
+            "permission.step1": "將 MacCleaner 安裝到「應用程式」資料夾（從 DMG 拖入即可）",
+            "permission.step2": "點擊「開啟系統設定」，前往「隱私權與安全性」→「完整磁碟存取權限」",
+            "permission.step3": "點擊列表左下角 + 號（若已鎖定請先解鎖）",
+            "permission.step4": "點擊「在 Finder 中顯示」，選擇「應用程式」中的 MacCleaner，並勾選啟用",
+            "permission.step5": "返回本 App，點擊「重新檢測」",
             "permission.openSettings": "開啟系統設定",
+            "permission.revealApp": "在 Finder 中顯示",
             "permission.recheck": "重新檢測",
             "permission.granted": "權限已授予",
             "excluded.title": "排除列表",
@@ -535,7 +558,8 @@ extension LocalizationManager {
             "uninstaller.orphanCleanTitle": "清理解除安裝殘留",
             "uninstaller.orphanCleanMessage": "將清理 %d 個殘留檔案，共 %@。檔案將移入垃圾桶。",
             "uninstaller.preparingResiduals": "正在尋找殘留檔案…",
-            "uninstaller.operationProgress": "%d / %d 已完成"
+            "uninstaller.operationProgress": "%d / %d 已完成",
+            "uninstaller.revealInFinder": "在 Finder 中顯示"
         ]
     ]
 }

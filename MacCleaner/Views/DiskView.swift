@@ -100,7 +100,9 @@ struct DiskView: View {
                 cleaningResultCard
             }
 
-            if !scanner.hasCompletedScan && scanner.scanResults.isEmpty && !scanner.isScanning {
+            if !permissionManager.hasFullDiskAccess {
+                noPermissionState
+            } else if !scanner.hasCompletedScan && scanner.scanResults.isEmpty && !scanner.isScanning {
                 Spacer()
                 emptyState
                 Spacer()
@@ -127,7 +129,7 @@ struct DiskView: View {
             Text(localization.text(
                 "disk.confirm.messageFiles",
                 categorySummary.count + individualSummary.count,
-                formatSize(categorySummary.size + individualSummary.size),
+                ByteFormatter.shared.format(categorySummary.size + individualSummary.size),
                 trashCount
             ))
         }
@@ -175,12 +177,12 @@ struct DiskView: View {
             .buttonStyle(.borderless)
             .disabled(isBusy)
 
-            if scanner.totalCleanableSize > 0 {
+            if permissionManager.hasFullDiskAccess && scanner.totalCleanableSize > 0 {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(localization.text("disk.cleanableSpace"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(formatSize(scanner.totalCleanableSize))
+                    Text(ByteFormatter.shared.format(scanner.totalCleanableSize))
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundStyle(.orange)
@@ -260,7 +262,7 @@ struct DiskView: View {
                 Text(localization.text("disk.before"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(formatSize(freeSpaceBefore))
+                Text(ByteFormatter.shared.format(freeSpaceBefore))
                     .font(.title3)
                     .fontWeight(.medium)
             }
@@ -273,7 +275,7 @@ struct DiskView: View {
                 Text(localization.text("disk.after"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(formatSize(freeSpaceAfter))
+                Text(ByteFormatter.shared.format(freeSpaceAfter))
                     .font(.title3)
                     .fontWeight(.medium)
                     .foregroundStyle(.green)
@@ -285,7 +287,7 @@ struct DiskView: View {
                 Text(localization.text("disk.freed"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(formatSize(cleanedSize))
+                Text(ByteFormatter.shared.format(cleanedSize))
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundStyle(.green)
@@ -300,6 +302,29 @@ struct DiskView: View {
         )
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
+    }
+
+    private var noPermissionState: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "lock.shield")
+                .font(.system(size: 56))
+                .foregroundStyle(.orange)
+            Text(localization.text("disk.noPermission.title"))
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text(localization.text("disk.noPermission.message"))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
+            Button {
+                permissionManager.showPermissionGuide = true
+            } label: {
+                Label(localization.text("disk.noPermission.button"), systemImage: "lock.open")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyState: some View {
@@ -439,7 +464,7 @@ struct DiskView: View {
                         .clipShape(Capsule())
                 }
 
-                Text(formatSize(category.totalSize))
+                Text(ByteFormatter.shared.format(category.totalSize))
                     .font(.body)
                     .fontWeight(.semibold)
                     .foregroundStyle(.orange)
@@ -459,17 +484,7 @@ struct DiskView: View {
         return HStack(spacing: 8) {
             if categoryType.isCleanable {
                 Button(action: {
-                    if isCategorySelected {
-                        if excludedSelectedFiles.contains(file.url) {
-                            excludedSelectedFiles.remove(file.url)
-                        } else {
-                            excludedSelectedFiles.insert(file.url)
-                        }
-                    } else if isSelected {
-                        selectedFiles.remove(file.url)
-                    } else {
-                        selectedFiles.insert(file.url)
-                    }
+                    toggleFileSelection(file.url, categoryType: categoryType)
                 }) {
                     Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                         .font(.system(size: 14))
@@ -479,36 +494,43 @@ struct DiskView: View {
                 .disabled(isBeingCleaned)
             }
 
-            Image(systemName: "doc")
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
+            HStack(spacing: 8) {
+                Image(systemName: "doc")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(file.url.lastPathComponent)
-                    .font(.body)
-                    .lineLimit(1)
-                Text(file.url.deletingLastPathComponent().path)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(file.url.lastPathComponent)
+                        .font(.body)
+                        .lineLimit(1)
+                    Text(file.url.deletingLastPathComponent().path)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if file.isProtected {
+                    Text(localization.text("disk.protected"))
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.red.opacity(0.15))
+                        .foregroundStyle(.red)
+                        .clipShape(Capsule())
+                }
+
+                Text(ByteFormatter.shared.format(file.size))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .monospacedDigit()
             }
-
-            Spacer()
-
-            if file.isProtected {
-                Text(localization.text("disk.protected"))
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.red.opacity(0.15))
-                    .foregroundStyle(.red)
-                    .clipShape(Capsule())
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard categoryType.isCleanable, !isBeingCleaned else { return }
+                toggleFileSelection(file.url, categoryType: categoryType)
             }
-
-            Text(formatSize(file.size))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
 
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([file.url])
@@ -523,6 +545,22 @@ struct DiskView: View {
         }
         .padding(.leading, 8)
         .opacity(isBeingCleaned ? 0.4 : 1.0)
+    }
+
+    private func toggleFileSelection(_ url: URL, categoryType: ScanCategoryType) {
+        let isCategorySelected = selectedCleanableCategories.contains(categoryType)
+
+        if isCategorySelected {
+            if excludedSelectedFiles.contains(url) {
+                excludedSelectedFiles.remove(url)
+            } else {
+                excludedSelectedFiles.insert(url)
+            }
+        } else if selectedFiles.contains(url) {
+            selectedFiles.remove(url)
+        } else {
+            selectedFiles.insert(url)
+        }
     }
 
     // 开始扫描磁盘

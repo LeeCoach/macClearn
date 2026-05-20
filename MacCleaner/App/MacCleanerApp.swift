@@ -18,7 +18,7 @@ struct MacCleanerApp: App {
             ContentView()
                 .environmentObject(localization)
         }
-        .defaultSize(width: 960, height: 640)
+        .defaultSize(width: Constants.UI.defaultWindowWidth, height: Constants.UI.defaultWindowHeight)
 
         Settings {
             SettingsView()
@@ -72,9 +72,13 @@ struct SettingsView: View {
                     .fontWeight(.bold)
                 Text(localization.text("app.tagline"))
                     .foregroundStyle(.secondary)
-                Text(localization.text("settings.version", AppVersion.marketing))
+                Text(localization.text("settings.version", AppVersion.resolvedMarketing))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                Text(localization.text("settings.bundleId", AppInfo.resolvedBundleIdentifier))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .tabItem {

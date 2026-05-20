@@ -13,7 +13,15 @@ let package = Package(
         .executableTarget(
             name: "MacCleaner",
             path: "MacCleaner",
-            exclude: ["Info.plist", "Resources"]
+            exclude: ["Info.plist", "Resources"],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "MacCleaner/Info.plist"
+                ])
+            ]
         )
     ]
 )

@@ -79,7 +79,7 @@ class DiskScanner: ObservableObject {
             let data = try JSONEncoder().encode(scanResults)
             try data.write(to: persistenceURL, options: .atomic)
         } catch {
-            print("Failed to save scan results: \(error)")
+            AppLogger.error(error, context: "Failed to save scan results", log: .disk)
         }
     }
 
@@ -196,9 +196,6 @@ class DiskScanner: ObservableObject {
         saveScanResults()
     }
 
-    private static let batchFileThreshold = 50
-    private static let batchTimeThreshold: TimeInterval = 0.3
-
     /// 扫描指定类别的文件，每 50 个或每 0.3 秒推送中间结果到 UI
     private func scanCategory(_ type: ScanCategoryType) async -> ScanCategory {
         var category = ScanCategory(categoryType: type)
@@ -242,7 +239,7 @@ class DiskScanner: ObservableObject {
 
                     let newFiles = fileCount - lastBatchCount
                     let now = Date()
-                    if newFiles >= Self.batchFileThreshold || now.timeIntervalSince(lastBatchTime) >= Self.batchTimeThreshold {
+                    if newFiles >= Constants.Scan.batchFileThreshold || now.timeIntervalSince(lastBatchTime) >= Constants.Scan.batchTimeThreshold {
                         lastBatchCount = fileCount
                         lastBatchTime = now
                         let snapshot = ScanCategory(categoryType: type, totalSize: totalSize, fileCount: fileCount, files: files)
@@ -274,8 +271,6 @@ class DiskScanner: ObservableObject {
     private func scanLargeFiles(_ type: ScanCategoryType) async -> ScanCategory {
         var category = ScanCategory(categoryType: type)
         guard let paths = categoryPaths[type] else { return category }
-
-        let threshold: UInt64 = 100 * 1024 * 1024
 
         var files: [ScanFileItem] = []
         var totalSize: UInt64 = 0
@@ -318,7 +313,7 @@ class DiskScanner: ObservableObject {
 
                     let newFilesCount = scannedCount - lastBatchCount
                     let now = Date()
-                    if newFilesCount >= Self.batchFileThreshold || now.timeIntervalSince(lastBatchTime) >= Self.batchTimeThreshold {
+                    if newFilesCount >= Constants.Scan.batchFileThreshold || now.timeIntervalSince(lastBatchTime) >= Constants.Scan.batchTimeThreshold {
                         lastBatchCount = scannedCount
                         lastBatchTime = now
                         let snapshot = ScanCategory(categoryType: type, totalSize: totalSize, fileCount: files.count, files: files)
@@ -331,7 +326,7 @@ class DiskScanner: ObservableObject {
                     if isPathExcluded(item.path) || isProtectedPath(item.path) { continue }
 
                     let fileSize = UInt64(resourceValues.fileSize ?? 0)
-                    if fileSize >= threshold {
+                    if fileSize >= Constants.Scan.largeFileThreshold {
                         files.append(ScanFileItem(url: item, size: fileSize, isProtected: false))
                         totalSize += fileSize
                     }
@@ -431,7 +426,6 @@ class DiskScanner: ObservableObject {
             cleanProgress = 0.0
         }
 
-        let maxConcurrentCleanTasks = 12
         let cleaned: (UInt64, Set<URL>) = await withTaskGroup(of: (UInt64, URL).self) { group in
             var iterator = tasks.makeIterator()
             var submitted = 0
@@ -457,7 +451,7 @@ class DiskScanner: ObservableObject {
                 }
             }
 
-            for _ in 0..<min(maxConcurrentCleanTasks, totalFiles) {
+            for _ in 0..<min(Constants.Scan.maxConcurrentCleanTasks, totalFiles) {
                 submitNext()
             }
 

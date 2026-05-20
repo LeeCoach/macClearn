@@ -38,6 +38,14 @@ struct PermissionGuideView: View {
                 Text(localization.text("permission.message"))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+
+                if !permissionManager.isRunningFromApplications {
+                    Text(localization.text("permission.installHint"))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                }
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -45,17 +53,26 @@ struct PermissionGuideView: View {
                 stepRow(number: 2, text: localization.text("permission.step2"))
                 stepRow(number: 3, text: localization.text("permission.step3"))
                 stepRow(number: 4, text: localization.text("permission.step4"))
+                stepRow(number: 5, text: localization.text("permission.step5"))
             }
             .padding()
             .background(RoundedRectangle(cornerRadius: 12).fill(Color(NSColor.controlBackgroundColor)))
 
-            HStack(spacing: 16) {
+            HStack(spacing: 12) {
                 Button(action: {
                     permissionManager.openPrivacySettings()
                 }) {
                     Label(localization.text("permission.openSettings"), systemImage: "gear")
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button(action: {
+                    permissionManager.revealApplicationInFinder()
+                }) {
+                    Label(localization.text("permission.revealApp"), systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
                 .controlSize(.large)
 
                 Button(action: {
@@ -77,7 +94,10 @@ struct PermissionGuideView: View {
             }
         }
         .padding(32)
-        .frame(maxWidth: 500)
+        .frame(maxWidth: 560)
+        .onAppear {
+            permissionManager.registerFullDiskAccessRequest()
+        }
     }
 
     // 步骤行组件，展示编号圆圈和步骤说明
