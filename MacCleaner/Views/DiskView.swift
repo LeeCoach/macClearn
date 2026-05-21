@@ -18,12 +18,12 @@ struct DiskView: View {
     @State private var cleanableBefore: UInt64 = 0
     @State private var cleanedSize: UInt64 = 0
     @State private var wasPermanentDelete: Bool = false
+    @State private var cleanedTrash: Bool = false
+    @State private var cleanedTrashOnly: Bool = false
     @State private var showCleaningResult: Bool = false
     @State private var showCleanConfirmation: Bool = false
     @State private var showExcludedPaths: Bool = false
     @State private var permanentlyDelete = false
-    /// 扫描进度条水流动效相位（0→1 反复循环，扫描段从左侧滑入、右侧滑出）
-    @State private var scanShimmerPhase: CGFloat = 0
 
     // 当前是否正在扫描或清理
     private var isBusy: Bool {
@@ -190,167 +190,100 @@ struct DiskView: View {
         .background(.bar)
     }
 
-    // 扫描进度条，渐变进度 + 实时文件计数
+    // 扫描进度条，实时显示文件计数
     private var scanProgressBar: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Label(localization.text("disk.scanning"), systemImage: "magnifyingglass")
+                Text(localization.text("disk.scanning"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                // 进度为 0 时显示旋转指示器，让用户知道扫描正在进行
-                if scanner.scanProgress < 0.01 {
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.7)
-                }
                 Spacer()
+            }
+
+            ProgressView()
+                .progressViewStyle(.linear)
+                .tint(.accentColor)
+
+            HStack(spacing: 4) {
+                Image(systemName: "doc")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
                 Text(localization.text("disk.scannedFiles", scanner.scannedFileCount))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.tertiary)
-                    .contentTransition(.numericText())
-            }
-
-            // 自定义渐变进度条：扫描总量未知时使用更明显的移动扫描段
-            GeometryReader { geometry in
-                let barWidth = geometry.size.width
-                let progressWidth = max(0, barWidth * CGFloat(scanner.scanProgress))
-                let sweepWidth = min(max(barWidth * 0.28, 96), 180)
-                let sweepOffset = scanShimmerPhase * (barWidth + sweepWidth) - sweepWidth
-
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(.quaternary.opacity(0.65))
-                        .frame(height: 14)
-
-                    if scanner.isScanning {
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(
-                                LinearGradient(
-                                    colors: [.blue.opacity(0.2), .cyan, .indigo.opacity(0.85)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: sweepWidth, height: 14)
-                            .offset(x: sweepOffset)
-                            .shadow(color: .blue.opacity(0.45), radius: 5, x: 0, y: 1)
-
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(
-                                LinearGradient(
-                                    colors: [.clear, .white.opacity(0.75), .clear],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: sweepWidth * 0.45, height: 14)
-                            .offset(x: sweepOffset + sweepWidth * 0.35)
-                    }
-
-                    if scanner.scanProgress > 0.01 {
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(
-                                LinearGradient(
-                                    colors: [.blue, .purple, .indigo],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(width: progressWidth, height: 14)
-                            .shadow(color: .blue.opacity(0.35), radius: 4, x: 0, y: 2)
-                            .animation(.easeOut(duration: 0.3), value: scanner.scanProgress)
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-            }
-            .frame(height: 14)
-            .onAppear {
-                startScanProgressAnimation()
-            }
-            .onChange(of: scanner.isScanning) { isScanning in
-                guard isScanning else { return }
-                startScanProgressAnimation()
-            }
-
-            HStack {
                 Spacer()
                 Button(action: { scanner.cancelScan() }) {
-                    Label(localization.text("common.cancel"), systemImage: "xmark.circle.fill")
-                        .font(.caption2)
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
                         .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 10)
-    }
-
-    private func startScanProgressAnimation() {
-        scanShimmerPhase = 0
-        DispatchQueue.main.async {
-            withAnimation(.linear(duration: 1.05).repeatForever(autoreverses: false)) {
-                if scanner.isScanning {
-                    scanShimmerPhase = 1
-                }
-            }
-        }
+        .padding(.bottom, 8)
     }
 
     private var cleanProgressBar: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Label(localization.text("disk.cleaning"), systemImage: "trash")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+        VStack(spacing: 10) {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(localization.text("disk.cleaning"), systemImage: "trash")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(.quaternary.opacity(0.5))
+                                .frame(height: 16)
+
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.green, .teal, .cyan],
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
+                                )
+                                .frame(width: max(0, geometry.size.width * CGFloat(scanner.cleanProgress)), height: 16)
+                                .shadow(color: .green.opacity(0.35), radius: 4, x: 0, y: 2)
+                                .animation(.spring(response: 0.35), value: scanner.cleanProgress)
+                        }
+                    }
+                    .frame(height: 16)
+                }
+                .frame(maxWidth: .infinity)
+
                 Text("\(Int(scanner.cleanProgress * 100))%")
-                    .font(.subheadline)
-                    .fontWeight(.bold)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.green)
+                    .frame(width: 76, alignment: .trailing)
+                    .minimumScaleFactor(0.75)
+                    .lineLimit(1)
                     .contentTransition(.numericText())
             }
 
-            // 自定义渐变进度条：绿 → 青 → 蓝
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(.quaternary.opacity(0.5))
-                        .frame(height: 14)
-
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(
-                            LinearGradient(
-                                colors: [.green, .teal, .cyan],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: max(0, geometry.size.width * CGFloat(scanner.cleanProgress)), height: 14)
-                        .shadow(color: .green.opacity(0.35), radius: 4, x: 0, y: 2)
-                        .animation(.spring(response: 0.35), value: scanner.cleanProgress)
-                }
-            }
-            .frame(height: 14)
-
             HStack {
-                Spacer()
+                Spacer(minLength: 0)
                 Button(action: { scanner.cancelClean() }) {
                     Label(localization.text("common.cancel"), systemImage: "xmark.circle.fill")
-                        .font(.caption2)
+                        .font(.caption)
                         .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 10)
+        .padding(.bottom, 12)
     }
 
     // 清理结果卡片，展示实际磁盘可用空间变化
     private var cleaningResultCard: some View {
-        VStack(spacing: 12) {
+        let cleanableAfter = cleanableBefore > cleanedSize ? cleanableBefore - cleanedSize : 0
+
+        return VStack(spacing: 12) {
             HStack(spacing: 32) {
                 VStack(spacing: 4) {
                     Text(localization.text("disk.before"))
@@ -369,7 +302,7 @@ struct DiskView: View {
                     Text(localization.text("disk.after"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text(ByteFormatter.shared.format(scanner.totalCleanableSize))
+                    Text(ByteFormatter.shared.format(cleanableAfter))
                         .font(.title3)
                         .fontWeight(.medium)
                         .foregroundStyle(.green)
@@ -388,7 +321,7 @@ struct DiskView: View {
                 }
             }
 
-            if !wasPermanentDelete && cleanedSize > 0 {
+            if !wasPermanentDelete && !cleanedTrashOnly && cleanedSize > 0 {
                 HStack(spacing: 4) {
                     Image(systemName: "trash")
                         .font(.caption2)
@@ -565,6 +498,11 @@ struct DiskView: View {
                             .foregroundStyle(.orange)
                             .help("扫描结果已截断，文件数可能大于显示值")
                     }
+                }
+                if category.categoryType == .xcodeCache {
+                    Text(localization.text("disk.hint.xcodeCache"))
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
                 }
             }
 
@@ -819,6 +757,8 @@ struct DiskView: View {
         }
         cleanableBefore = scanner.totalCleanableSize
         wasPermanentDelete = permanentlyDelete
+        cleanedTrash = selectedCleanableCategories.contains(.trash)
+        cleanedTrashOnly = cleanedTrash && selectedCleanableCategories.subtracting([.trash]).isEmpty && selectedFiles.isEmpty
         showCleaningResult = false
         let categoriesToRemove = selectedCleanableCategories
         let filesToRemove = selectedFiles

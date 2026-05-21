@@ -202,55 +202,54 @@ struct UninstallerView: View {
                 }
                 .buttonStyle(.plain)
 
-                if let icon = app.icon {
-                    Image(nsImage: icon)
-                        .frame(width: 40, height: 40)
-                } else {
-                    Image(systemName: "app")
-                        .font(.system(size: 32))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 40, height: 40)
-                }
+                // 图标 + 详情区域：整行可点击弹出应用信息（排除勾选框和卸载按钮）
+                HStack(spacing: 12) {
+                    if let icon = app.icon {
+                        Image(nsImage: icon)
+                            .frame(width: 40, height: 40)
+                    } else {
+                        Image(systemName: "app")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40, height: 40)
+                    }
 
-                Button {
-                    selectedAppForDetail = app
-                } label: {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(app.name)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.primary)
-                                if app.url.pathExtension != "app" {
-                                    Text(bundleTypeLabel(for: app.url.pathExtension))
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .background(.quaternary.opacity(0.5))
-                                        .clipShape(Capsule())
-                                }
-                            }
-                            Text(app.detailText(localization: localization))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(app.formattedSize)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if let date = app.lastAccessed {
-                                Text(dateFormatter.string(from: date))
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(app.name)
+                                .fontWeight(.medium)
+                            if app.url.pathExtension != "app" {
+                                Text(bundleTypeLabel(for: app.url.pathExtension))
                                     .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(.quaternary.opacity(0.5))
+                                    .clipShape(Capsule())
                             }
+                        }
+                        Text(app.detailText(localization: localization))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(app.formattedSize)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let date = app.lastAccessed {
+                            Text(dateFormatter.string(from: date))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
                     }
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedAppForDetail = app
+                }
 
                 Button {
                     prepareSingleUninstall(for: app)
