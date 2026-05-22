@@ -2,14 +2,16 @@ name: Build and Package DMG
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -76,7 +78,11 @@ jobs:
           cp ".build/release/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/"
           cp "${APP_NAME}/Info.plist" "${APP_BUNDLE}/Contents/"
           cp "${APP_NAME}/Resources/MacCleanerIcon.icns" "${APP_BUNDLE}/Contents/Resources/"
-          cp "${APP_NAME}/Resources/SidebarIcon.png" "${APP_BUNDLE}/Contents/Resources/"
+          if [[ -f "${APP_NAME}/Resources/SidebarIcon.png" ]]; then
+            cp "${APP_NAME}/Resources/SidebarIcon.png" "${APP_BUNDLE}/Contents/Resources/"
+          else
+            echo "::warning::SidebarIcon.png not found; app will use fallback icon at runtime."
+          fi
 
           /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable ${APP_NAME}" "${APP_BUNDLE}/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.maccleaner.app" "${APP_BUNDLE}/Contents/Info.plist"

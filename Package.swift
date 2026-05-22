@@ -1,4 +1,4 @@
-// swift-tools-version: 5.8
+// swift-tools-version: 6.0
 
 import PackageDescription
 
@@ -14,6 +14,10 @@ let package = Package(
             name: "MacCleaner",
             path: "MacCleaner",
             exclude: ["Info.plist", "Resources"],
+            swiftSettings: [
+                // CI（Xcode 15+/Swift 6）默认语言模式会把并发相关诊断当错误；保持 Swift 5 模式与本地一致
+                .swiftLanguageMode(.v5)
+            ],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

@@ -404,7 +404,7 @@ class DiskScanner: ObservableObject {
                 errorHandler: { _, _ in true }
             ) else { continue }
 
-            for case let fileURL as URL in enumerator {
+            while let fileURL = enumerator.nextObject() as? URL {
                 if isScanCancelled { break }
 
                 do {
@@ -506,7 +506,7 @@ class DiskScanner: ObservableObject {
                 errorHandler: { _, _ in true }
             ) else { continue }
 
-            for case let item as URL in enumerator {
+            while let item = enumerator.nextObject() as? URL {
                 if isScanCancelled { break }
 
                 do {
@@ -820,9 +820,10 @@ class DiskScanner: ObservableObject {
         _ task: (url: URL, size: UInt64, categoryType: ScanCategoryType),
         permanentlyDelete: Bool
     ) async -> (UInt64, URL, ScanCategoryType, Bool) {
-        await withCheckedContinuation { continuation in
-            cleanIOQueue.async { [weak self] in
-                guard let self, !self.isCleanCancelled else {
+        let cancelled = await MainActor.run { isCleanCancelled }
+        return await withCheckedContinuation { continuation in
+            cleanIOQueue.async {
+                guard !cancelled else {
                     continuation.resume(returning: (0, task.url, task.categoryType, false))
                     return
                 }
@@ -1039,8 +1040,9 @@ class DiskScanner: ObservableObject {
                 cleanedCategoriesByURL[url] = .trash
             }
             completedCount += trashRemoved.count
+            let progressCount = completedCount
             await MainActor.run {
-                cleanProgress = totalFiles > 0 ? Double(completedCount) / Double(totalFiles) : 1.0
+                cleanProgress = totalFiles > 0 ? Double(progressCount) / Double(totalFiles) : 1.0
             }
         }
         if !isCleanCancelled && !cleanedCategoriesByURL.isEmpty {
