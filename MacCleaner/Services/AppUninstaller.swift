@@ -15,6 +15,8 @@ class AppUninstaller: ObservableObject {
     @Published var uninstallProgress: Double = 0.0
     @Published var completedOperationCount: Int = 0
     @Published var totalOperationCount: Int = 0
+    @Published var uninstallErrorMessage: String?
+    @Published var uninstallSuccessMessage: String?
 
     @Published var orphanResiduals: [ResidualFile] = []
     @Published var isScanningOrphans: Bool = false
@@ -41,6 +43,17 @@ class AppUninstaller: ObservableObject {
         let residualID: URL?
         let isApp: Bool
         let appName: String?
+    }
+
+    private struct TrashTaskResult {
+        let task: TrashTask
+        let errorDescription: String?
+    }
+
+    private struct PrivilegedTrashError: LocalizedError {
+        let message: String
+
+        var errorDescription: String? { message }
     }
 
     /// 可识别的插件/服务 bundle 扩展名
@@ -325,6 +338,8 @@ class AppUninstaller: ObservableObject {
         currentUninstallApp = app
         uninstallProgress = 0
         completedOperationCount = 0
+        uninstallErrorMessage = nil
+        uninstallSuccessMessage = nil
 
         let tasks = residualFiles.map {
             TrashTask(url: $0.url, appID: nil, residualID: $0.id, isApp: false, appName: nil)
@@ -344,6 +359,8 @@ class AppUninstaller: ObservableObject {
         currentUninstallApp = nil
         uninstallProgress = 0
         completedOperationCount = 0
+        uninstallErrorMessage = nil
+        uninstallSuccessMessage = nil
 
         let residualTasks = residualFiles.map {
             TrashTask(url: $0.url, appID: nil, residualID: $0.id, isApp: false, appName: nil)
@@ -483,8 +500,10 @@ class AppUninstaller: ObservableObject {
         }
 
         let maxConcurrentTasks = 8
+        var failures: [(TrashTask, String)] = []
+        var successfulTasks: [TrashTask] = []
 
-        await withTaskGroup(of: TrashTask?.self) { group in
+        await withTaskGroup(of: TrashTaskResult.self) { group in
             var iterator = tasks.makeIterator()
             var submitted = 0
 
@@ -493,12 +512,11 @@ class AppUninstaller: ObservableObject {
                 submitted += 1
                 group.addTask {
                     do {
-                        var resultURL: NSURL?
-                        try FileManager.default.trashItem(at: task.url, resultingItemURL: &resultURL)
-                        return task
+                        try await Self.moveItemToTrash(task)
+                        return TrashTaskResult(task: task, errorDescription: nil)
                     } catch {
                         AppLogger.error(error, context: "无法移除 \(task.url.path)", log: .uninstaller)
-                        return nil
+                        return TrashTaskResult(task: task, errorDescription: error.localizedDescription)
                     }
                 }
             }
@@ -507,14 +525,20 @@ class AppUninstaller: ObservableObject {
                 submitNext()
             }
 
-            for await completedTask in group {
+            for await result in group {
                 await MainActor.run {
                     completedOperationCount += 1
                     uninstallProgress = Double(completedOperationCount) / Double(totalOperationCount)
 
-                    if let completedTask {
-                        applyCompletedTrashTask(completedTask)
+                    if result.errorDescription == nil {
+                        applyCompletedTrashTask(result.task)
                     }
+                }
+
+                if let errorDescription = result.errorDescription {
+                    failures.append((result.task, errorDescription))
+                } else {
+                    successfulTasks.append(result.task)
                 }
 
                 if submitted < tasks.count {
@@ -523,9 +547,100 @@ class AppUninstaller: ObservableObject {
             }
         }
 
+        let failureMessage = makeTrashFailureMessage(from: failures)
+        let successMessage = makeTrashSuccessMessage(from: successfulTasks)
         await MainActor.run {
-            finishTrashOperation()
+            finishTrashOperation(errorMessage: failureMessage, successMessage: successMessage)
         }
+    }
+
+    private static func moveItemToTrash(_ task: TrashTask) async throws {
+        do {
+            try await recycleItem(at: task.url)
+        } catch {
+            guard canRequestAdministratorPrivileges(for: task.url) else {
+                throw error
+            }
+
+            try await moveItemToTrashWithAdministratorPrivileges(at: task.url)
+        }
+    }
+
+    private static func recycleItem(at url: URL) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.main.async {
+                NSWorkspace.shared.recycle([url]) { _, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(returning: ())
+                    }
+                }
+            }
+        }
+    }
+
+    private static func canRequestAdministratorPrivileges(for url: URL) -> Bool {
+        let path = url.standardizedFileURL.path
+        return !path.hasPrefix("/System/Applications/")
+    }
+
+    private static func moveItemToTrashWithAdministratorPrivileges(at url: URL) async throws {
+        let sourceURL = url.standardizedFileURL
+        let trashDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash", isDirectory: true)
+        let destinationURL = uniqueTrashDestination(for: sourceURL, in: trashDirectory)
+        let command = [
+            "/bin/mkdir -p \(shellQuoted(trashDirectory.path))",
+            "/bin/mv \(shellQuoted(sourceURL.path)) \(shellQuoted(destinationURL.path))"
+        ].joined(separator: " && ")
+        let scriptSource = "do shell script \(appleScriptStringLiteral(command)) with administrator privileges"
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.main.async {
+                var errorInfo: NSDictionary?
+                let result = NSAppleScript(source: scriptSource)?.executeAndReturnError(&errorInfo)
+
+                if result != nil {
+                    continuation.resume(returning: ())
+                    return
+                }
+
+                let message = (errorInfo?[NSAppleScript.errorMessage] as? String)
+                    ?? "管理员授权删除失败"
+                continuation.resume(throwing: PrivilegedTrashError(message: message))
+            }
+        }
+    }
+
+    private static func uniqueTrashDestination(for sourceURL: URL, in trashDirectory: URL) -> URL {
+        let fileManager = FileManager.default
+        var destination = trashDirectory.appendingPathComponent(sourceURL.lastPathComponent)
+        guard fileManager.fileExists(atPath: destination.path) else { return destination }
+
+        let baseName = sourceURL.deletingPathExtension().lastPathComponent
+        let pathExtension = sourceURL.pathExtension
+        let timestamp = trashTimestampFormatter.string(from: Date())
+        let suffix = UUID().uuidString.prefix(8)
+        let uniqueName = pathExtension.isEmpty
+            ? "\(baseName) \(timestamp)-\(suffix)"
+            : "\(baseName) \(timestamp)-\(suffix).\(pathExtension)"
+
+        destination = trashDirectory.appendingPathComponent(uniqueName)
+        return destination
+    }
+
+    private static var trashTimestampFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }
+
+    private static func shellQuoted(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+    }
+
+    private static func appleScriptStringLiteral(_ value: String) -> String {
+        "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
     }
 
     private func applyCompletedTrashTask(_ task: TrashTask) {
@@ -544,12 +659,39 @@ class AppUninstaller: ObservableObject {
         }
     }
 
-    private func finishTrashOperation() {
+    private func finishTrashOperation(errorMessage: String? = nil, successMessage: String? = nil) {
         isUninstalling = false
         currentUninstallApp = nil
         uninstallProgress = 0
         completedOperationCount = 0
         totalOperationCount = 0
+        uninstallErrorMessage = errorMessage
+        uninstallSuccessMessage = successMessage
+    }
+
+    private func makeTrashFailureMessage(from failures: [(TrashTask, String)]) -> String? {
+        guard !failures.isEmpty else { return nil }
+
+        let visibleFailures = failures.prefix(5).map { task, error in
+            "- \(task.url.lastPathComponent): \(error)"
+        }
+        let remainingCount = failures.count - visibleFailures.count
+        let remainingMessage = remainingCount > 0 ? "\n...还有 \(remainingCount) 个项目失败" : ""
+
+        return "以下项目无法移入废纸篓：\n\(visibleFailures.joined(separator: "\n"))\(remainingMessage)"
+    }
+
+    private func makeTrashSuccessMessage(from tasks: [TrashTask]) -> String? {
+        guard !tasks.isEmpty else { return nil }
+
+        let appNames = tasks.compactMap(\.appName)
+        if appNames.count == 1, let appName = appNames.first {
+            return "\(appName) 已卸载"
+        }
+        if appNames.count > 1 {
+            return "已卸载 \(appNames.count) 个应用"
+        }
+        return "残留文件已清理"
     }
 
     private static func installedAppIndex(from apps: [InstalledApp]) -> InstalledAppIndex {
@@ -836,6 +978,8 @@ class AppUninstaller: ObservableObject {
         currentUninstallApp = nil
         uninstallProgress = 0
         completedOperationCount = 0
+        uninstallErrorMessage = nil
+        uninstallSuccessMessage = nil
 
         let tasks = residuals.map {
             TrashTask(url: $0.url, appID: nil, residualID: $0.id, isApp: false, appName: nil)

@@ -50,9 +50,7 @@ class DiskScanner: ObservableObject {
             .trash: ["\(home)/.Trash"],
             .downloads: ["\(home)/Downloads"],
             .xcodeCache: [
-                "\(home)/Library/Developer/Xcode/DerivedData",
-                "\(home)/Library/Developer/Xcode/Archives",
-                "\(home)/Library/Developer/Xcode/iOS DeviceSupport"
+                "\(home)/Library/Developer/Xcode/DerivedData"
             ],
             .browserCache: [
                 "\(home)/Library/Caches/Google/Chrome",
@@ -62,6 +60,13 @@ class DiskScanner: ObservableObject {
             .largeFiles: [home]
         ]
     }
+
+    private let packageDirectoryExtensions: Set<String> = [
+        "app", "appex", "bundle", "framework", "plugin", "prefPane",
+        "qlgenerator", "saver", "service", "inputMethod", "ideplugin",
+        "wkplugin", "mdimporter", "xcarchive", "xcworkspace",
+        "xcodeproj", "playground", "photoslibrary"
+    ]
 
     func cancelOperation() {
         isCancelled = true
@@ -117,6 +122,8 @@ class DiskScanner: ObservableObject {
             scannedFileCount = 0
             activeCategoryTypes = []
             cleanedFileURLs = []
+            scanResults = ScanCategoryType.allCases.map { ScanCategory(categoryType: $0) }
+            totalCleanableSize = 0
         }
 
         let types = ScanCategoryType.allCases
@@ -135,6 +142,8 @@ class DiskScanner: ObservableObject {
                     let category: ScanCategory
                     if type == .largeFiles {
                         category = await self.scanLargeFiles(type)
+                    } else if type == .trash {
+                        category = await self.scanTrashCategory()
                     } else {
                         category = await self.scanCategory(type)
                     }
@@ -154,15 +163,10 @@ class DiskScanner: ObservableObject {
                 }
 
                 await MainActor.run {
-                    // 保留已存在的截断标记（如果一个子路径触发了截断，后续路径也应视为截断）
-                    var merged = category
-                    if let existing = scanResults.first(where: { $0.categoryType == category.categoryType }), existing.isTruncated {
-                        merged.isTruncated = true
-                    }
-                    if let index = scanResults.firstIndex(where: { $0.categoryType == merged.categoryType }) {
-                        scanResults[index] = merged
+                    if let index = scanResults.firstIndex(where: { $0.categoryType == category.categoryType }) {
+                        scanResults[index] = category
                     } else {
-                        scanResults.append(merged)
+                        scanResults.append(category)
                     }
                     totalCleanableSize = cleanableSize(in: scanResults)
                 }
@@ -171,7 +175,7 @@ class DiskScanner: ObservableObject {
 
         await MainActor.run {
             let completedAt = Date()
-            scanResults = scanResults.map { category in
+            scanResults = orderedCategories(scanResults).map { category in
                 var updated = category
                 updated.scannedAt = completedAt
                 return updated
@@ -203,6 +207,8 @@ class DiskScanner: ObservableObject {
                     let category: ScanCategory
                     if type == .largeFiles {
                         category = await self.scanLargeFiles(type)
+                    } else if type == .trash {
+                        category = await self.scanTrashCategory()
                     } else {
                         category = await self.scanCategory(type)
                     }
@@ -235,13 +241,153 @@ class DiskScanner: ObservableObject {
         }
     }
 
-    /// 扫描指定类别的文件，每 50 个或每 0.3 秒推送中间结果到 UI
+    private func orderedCategories(_ categories: [ScanCategory]) -> [ScanCategory] {
+        var byType = Dictionary(uniqueKeysWithValues: categories.map { ($0.categoryType, $0) })
+        return ScanCategoryType.allCases.map { type in
+            byType.removeValue(forKey: type) ?? ScanCategory(categoryType: type)
+        }
+    }
+
+    private func trashRootURLs() -> [URL] {
+        [URL(fileURLWithPath: "\(home)/.Trash", isDirectory: true)]
+    }
+
+    private func isIgnorableTrashItem(_ url: URL) -> Bool {
+        let name = url.lastPathComponent
+        return name == ".DS_Store" || Self.ignorableEmptyDirectoryItems.contains(name)
+    }
+
+    private func countTrashItemsToClean(excluding excludedURLs: Set<URL>) -> Int {
+        let excludedPaths = Set(excludedURLs.map { $0.standardizedFileURL.path })
+        var count = 0
+        for trashRoot in trashRootURLs() {
+            if isPathExcluded(trashRoot.path) { continue }
+            guard fileManager.fileExists(atPath: trashRoot.path),
+                  let items = try? fileManager.contentsOfDirectory(
+                      at: trashRoot,
+                      includingPropertiesForKeys: nil,
+                      options: []
+                  ) else { continue }
+            for item in items {
+                let url = item.standardizedFileURL
+                if isIgnorableTrashItem(url) { continue }
+                if excludedPaths.contains(url.path) || isPathExcluded(url.path) { continue }
+                count += 1
+            }
+        }
+        return count
+    }
+
+    private func trashItemSize(at url: URL) -> (size: UInt64, isDirectory: Bool) {
+        let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey, .isPackageKey])
+        let isDirectory = resourceValues?.isDirectory == true || resourceValues?.isPackage == true
+        if isDirectory {
+            return (Self.directorySize(at: url), true)
+        }
+        return (UInt64(resourceValues?.fileSize ?? 0), false)
+    }
+
+    /// 扫描废纸篓顶层项目（与访达废纸篓列表一致），避免深层枚举漏掉 .app 等包
+    private func scanTrashCategory() async -> ScanCategory {
+        var category = ScanCategory(categoryType: .trash)
+        var totalSize: UInt64 = 0
+        var itemCount = 0
+        var files: [ScanFileItem] = []
+        var lastBatchCount = 0
+        var lastBatchTime = Date.distantPast
+
+        for trashRoot in trashRootURLs() {
+            if isScanCancelled { break }
+            if isPathExcluded(trashRoot.path) { continue }
+            guard fileManager.fileExists(atPath: trashRoot.path) else { continue }
+
+            guard let items = try? fileManager.contentsOfDirectory(
+                at: trashRoot,
+                includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey, .isPackageKey],
+                options: []
+            ) else { continue }
+
+            for itemURL in items {
+                if isScanCancelled { break }
+
+                let url = itemURL.standardizedFileURL
+                if isPathExcluded(url.path) || isIgnorableTrashItem(url) { continue }
+
+                let (size, isDirectory) = trashItemSize(at: url)
+                totalSize += size
+                itemCount += 1
+                files.append(ScanFileItem(url: url, size: size, isProtected: false, isDirectory: isDirectory))
+
+                let newItems = itemCount - lastBatchCount
+                let now = Date()
+                if newItems >= Constants.Scan.batchFileThreshold || now.timeIntervalSince(lastBatchTime) >= Constants.Scan.batchTimeThreshold {
+                    lastBatchCount = itemCount
+                    lastBatchTime = now
+                    let snapshot = ScanCategory(categoryType: .trash, totalSize: totalSize, fileCount: itemCount, files: files)
+                    await MainActor.run {
+                        self.scannedFileCount += newItems
+                        self.publishIntermediate(snapshot)
+                    }
+                }
+            }
+        }
+
+        let remaining = itemCount - lastBatchCount
+        if remaining > 0 {
+            await MainActor.run {
+                self.scannedFileCount += remaining
+            }
+        }
+
+        category.totalSize = totalSize
+        category.fileCount = itemCount
+        category.files = files
+        return category
+    }
+
+    /// 清空废纸篓（等同访达「清倒废纸篓」），可排除用户取消勾选的项
+    private func emptyTrash(excluding excludedURLs: Set<URL> = []) async -> (UInt64, Set<URL>) {
+        let excludedPaths = Set(excludedURLs.map { $0.standardizedFileURL.path })
+        var freed: UInt64 = 0
+        var removedURLs: Set<URL> = []
+
+        for trashRoot in trashRootURLs() {
+            if isCleanCancelled { break }
+            if isPathExcluded(trashRoot.path) { continue }
+            guard fileManager.fileExists(atPath: trashRoot.path) else { continue }
+
+            guard let items = try? fileManager.contentsOfDirectory(
+                at: trashRoot,
+                includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey, .isPackageKey],
+                options: []
+            ) else { continue }
+
+            for itemURL in items {
+                if isCleanCancelled { break }
+
+                let url = itemURL.standardizedFileURL
+                if isIgnorableTrashItem(url) { continue }
+                if excludedPaths.contains(url.path) || isPathExcluded(url.path) { continue }
+
+                let (size, _) = trashItemSize(at: url)
+                let (_, _, _, didClean) = await cleanTask((url, size, .trash), permanentlyDelete: true)
+                if didClean {
+                    freed += size
+                    removedURLs.insert(url)
+                }
+            }
+        }
+
+        return (freed, removedURLs)
+    }
+
+    /// 扫描指定类别的可清理项目，每 50 个或每 0.3 秒推送中间结果到 UI
     private func scanCategory(_ type: ScanCategoryType) async -> ScanCategory {
         var category = ScanCategory(categoryType: type)
         guard let paths = categoryPaths[type] else { return category }
 
         var totalSize: UInt64 = 0
-        var fileCount = 0
+        var itemCount = 0
         var files: [ScanFileItem] = []
         var lastBatchCount = 0
         var lastBatchTime = Date.distantPast
@@ -266,6 +412,32 @@ class DiskScanner: ObservableObject {
                     if resourceValues.isDirectory == true {
                         if isPathExcluded(fileURL.path) {
                             enumerator.skipDescendants()
+                            continue
+                        }
+                        if isProtectedPath(fileURL.path) {
+                            continue
+                        }
+                        if type == .trash || isPackageDirectory(fileURL) {
+                            let size = Self.directorySize(at: fileURL)
+                            totalSize += size
+                            itemCount += 1
+                            files.append(ScanFileItem(url: fileURL, size: size, isProtected: false, isDirectory: true))
+                            enumerator.skipDescendants()
+                        } else if isDirectoryEffectivelyEmpty(fileURL) {
+                            itemCount += 1
+                            files.append(ScanFileItem(url: fileURL, size: 0, isProtected: false, isDirectory: true))
+                        }
+
+                        let newItems = itemCount - lastBatchCount
+                        let now = Date()
+                        if newItems >= Constants.Scan.batchFileThreshold || now.timeIntervalSince(lastBatchTime) >= Constants.Scan.batchTimeThreshold {
+                            lastBatchCount = itemCount
+                            lastBatchTime = now
+                            let snapshot = ScanCategory(categoryType: type, totalSize: totalSize, fileCount: itemCount, files: files)
+                            await MainActor.run {
+                                self.scannedFileCount += newItems
+                                self.publishIntermediate(snapshot)
+                            }
                         }
                         continue
                     }
@@ -273,15 +445,15 @@ class DiskScanner: ObservableObject {
 
                     let fileSize = UInt64(resourceValues.fileSize ?? 0)
                     totalSize += fileSize
-                    fileCount += 1
+                    itemCount += 1
                     files.append(ScanFileItem(url: fileURL, size: fileSize, isProtected: false))
 
-                    let newFiles = fileCount - lastBatchCount
+                    let newFiles = itemCount - lastBatchCount
                     let now = Date()
                     if newFiles >= Constants.Scan.batchFileThreshold || now.timeIntervalSince(lastBatchTime) >= Constants.Scan.batchTimeThreshold {
-                        lastBatchCount = fileCount
+                        lastBatchCount = itemCount
                         lastBatchTime = now
-                        let snapshot = ScanCategory(categoryType: type, totalSize: totalSize, fileCount: fileCount, files: files)
+                        let snapshot = ScanCategory(categoryType: type, totalSize: totalSize, fileCount: itemCount, files: files)
                         await MainActor.run {
                             self.scannedFileCount += newFiles
                             self.publishIntermediate(snapshot)
@@ -293,7 +465,7 @@ class DiskScanner: ObservableObject {
             }
         }
 
-        let remaining = fileCount - lastBatchCount
+        let remaining = itemCount - lastBatchCount
         if remaining > 0 {
             await MainActor.run {
                 self.scannedFileCount += remaining
@@ -301,7 +473,7 @@ class DiskScanner: ObservableObject {
         }
 
         category.totalSize = totalSize
-        category.fileCount = fileCount
+        category.fileCount = itemCount
         category.files = files
         return category
     }
@@ -426,19 +598,46 @@ class DiskScanner: ObservableObject {
     private func removeEmptyParentDirectories(for cleanedCategoriesByURL: [URL: ScanCategoryType], permanentlyDelete: Bool) {
         var parentDirsByPath: [String: (url: URL, categoryType: ScanCategoryType)] = [:]
         for (url, categoryType) in cleanedCategoriesByURL {
-            let parent = url.deletingLastPathComponent().standardizedFileURL
-            parentDirsByPath[parent.path] = (parent, categoryType)
+            let boundaries = cleanupBoundaryPaths(for: categoryType)
+            var current = url.deletingLastPathComponent().standardizedFileURL
+
+            while true {
+                let currentPath = current.path
+                if boundaries.contains(currentPath) || !isWithinCleanupBoundary(currentPath, boundaries: boundaries) {
+                    break
+                }
+                parentDirsByPath[currentPath] = (current, categoryType)
+
+                let parent = current.deletingLastPathComponent().standardizedFileURL
+                if parent.path == currentPath {
+                    break
+                }
+                current = parent
+            }
         }
 
         let sortedParents = parentDirsByPath.values.sorted {
             $0.url.pathComponents.count > $1.url.pathComponents.count
         }
         for parent in sortedParents {
+            removeEmptyDirectoriesInside(
+                parent.url,
+                categoryType: parent.categoryType
+            )
             removeEmptyDirectoryChain(
                 startingAt: parent.url,
                 categoryType: parent.categoryType,
                 permanentlyDelete: permanentlyDelete
             )
+        }
+    }
+
+    private func removeEmptyDirectoriesForCategories(_ categoryTypes: Set<ScanCategoryType>) {
+        for categoryType in categoryTypes {
+            for path in categoryPaths[categoryType] ?? [] {
+                let root = URL(fileURLWithPath: path).standardizedFileURL
+                removeEmptyDirectoriesInside(root, categoryType: categoryType)
+            }
         }
     }
 
@@ -466,6 +665,7 @@ class DiskScanner: ObservableObject {
                     for: cleanedCategoriesByURL,
                     permanentlyDelete: permanentlyDelete
                 )
+                self.removeEmptyDirectoriesForCategories(Set(cleanedCategoriesByURL.values))
             }
         }
     }
@@ -482,28 +682,14 @@ class DiskScanner: ObservableObject {
             if isPathExcluded(currentPath) || isProtectedPath(currentPath) {
                 break
             }
-            guard isDirectoryEmpty(current) else {
+            guard isDirectoryEffectivelyEmpty(current) else {
                 break
             }
 
             do {
-                if categoryType == .trash || permanentlyDelete {
-                    try fileManager.removeItem(at: current)
-                } else {
-                    var resultURL: NSURL?
-                    try fileManager.trashItem(at: current, resultingItemURL: &resultURL)
-                }
+                try fileManager.removeItem(at: current)
             } catch {
-                // 删除失败：回退或终止向上遍历
-                if categoryType != .trash && !permanentlyDelete {
-                    do {
-                        try fileManager.removeItem(at: current)
-                    } catch {
-                        break  // 两种方式都失败，终止遍历
-                    }
-                } else {
-                    break  // 直接删除失败，终止遍历
-                }
+                break
             }
 
             let parent = current.deletingLastPathComponent().standardizedFileURL
@@ -514,21 +700,114 @@ class DiskScanner: ObservableObject {
         }
     }
 
+    private func removeEmptyDirectoriesInside(_ directory: URL, categoryType: ScanCategoryType) {
+        let boundaries = cleanupBoundaryPaths(for: categoryType)
+        let root = directory.standardizedFileURL
+        let rootPath = root.path
+        let isBoundaryRoot = boundaries.contains(rootPath)
+        guard (isBoundaryRoot || isWithinCleanupBoundary(rootPath, boundaries: boundaries)),
+              !isPathExcluded(rootPath),
+              !isProtectedPath(rootPath) else {
+            return
+        }
+
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            errorHandler: { _, _ in true }
+        ) else {
+            return
+        }
+
+        var directories: [URL] = []
+        for case let item as URL in enumerator {
+            let itemURL = item.standardizedFileURL
+            let itemPath = itemURL.path
+            if isPathExcluded(itemPath) || isProtectedPath(itemPath) {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+                continue
+            }
+            directories.append(itemURL)
+        }
+
+        for directory in directories.sorted(by: { $0.pathComponents.count > $1.pathComponents.count }) {
+            guard !isCleanCancelled else { return }
+            let path = directory.path
+            guard !boundaries.contains(path),
+                  isWithinCleanupBoundary(path, boundaries: boundaries),
+                  isDirectoryEffectivelyEmpty(directory) else {
+                continue
+            }
+            try? fileManager.removeItem(at: directory)
+        }
+    }
+
     private func isWithinCleanupBoundary(_ path: String, boundaries: Set<String>) -> Bool {
         boundaries.contains { boundary in
             path.hasPrefix(boundary + "/")
         }
     }
 
-    private func isDirectoryEmpty(_ directory: URL) -> Bool {
+    private func isDirectoryEffectivelyEmpty(_ directory: URL) -> Bool {
         guard let contents = try? fileManager.contentsOfDirectory(
             at: directory,
-            includingPropertiesForKeys: nil,
+            includingPropertiesForKeys: [.isDirectoryKey, .isHiddenKey],
             options: []
         ) else {
             return false
         }
-        return contents.isEmpty
+
+        for item in contents {
+            guard isHiddenOrIgnorableDirectoryItem(item) else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func isHiddenOrIgnorableDirectoryItem(_ item: URL) -> Bool {
+        let name = item.lastPathComponent
+        if name.hasPrefix(".") || Self.ignorableEmptyDirectoryItems.contains(name) {
+            return true
+        }
+        return (try? item.resourceValues(forKeys: [.isHiddenKey]).isHidden) == true
+    }
+
+    private static let ignorableEmptyDirectoryItems: Set<String> = [
+        "Icon\r"
+    ]
+
+    private func isPackageDirectory(_ url: URL) -> Bool {
+        packageDirectoryExtensions.contains(url.pathExtension)
+    }
+
+    private static func directorySize(at url: URL) -> UInt64 {
+        let fileManager = FileManager.default
+        var totalSize: UInt64 = 0
+
+        guard let enumerator = fileManager.enumerator(
+            at: url,
+            includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles],
+            errorHandler: nil
+        ) else {
+            return 0
+        }
+
+        for case let fileURL as URL in enumerator {
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey]),
+                  resourceValues.isDirectory != true,
+                  let fileSize = resourceValues.fileSize else {
+                continue
+            }
+            totalSize += UInt64(fileSize)
+        }
+
+        return totalSize
     }
 
     private func cleanableSize(in categories: [ScanCategory]) -> UInt64 {
@@ -540,39 +819,40 @@ class DiskScanner: ObservableObject {
     private func cleanTask(
         _ task: (url: URL, size: UInt64, categoryType: ScanCategoryType),
         permanentlyDelete: Bool
-    ) async -> (UInt64, URL, ScanCategoryType) {
+    ) async -> (UInt64, URL, ScanCategoryType, Bool) {
         await withCheckedContinuation { continuation in
             cleanIOQueue.async { [weak self] in
                 guard let self, !self.isCleanCancelled else {
-                    continuation.resume(returning: (0, task.url, task.categoryType))
+                    continuation.resume(returning: (0, task.url, task.categoryType, false))
                     return
                 }
                 do {
-                    if task.categoryType == .trash || permanentlyDelete {
+                    let isDirectory = (try? task.url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                    if isDirectory || task.categoryType == .trash || permanentlyDelete {
                         try FileManager.default.removeItem(at: task.url)
                     } else {
                         var resultURL: NSURL?
                         try FileManager.default.trashItem(at: task.url, resultingItemURL: &resultURL)
                     }
-                    continuation.resume(returning: (task.size, task.url, task.categoryType))
+                    continuation.resume(returning: (task.size, task.url, task.categoryType, true))
                 } catch {
                     // 文件已不存在（可能扫描后手动删除了），视为清理成功
                     if !FileManager.default.fileExists(atPath: task.url.path) {
-                        continuation.resume(returning: (task.size, task.url, task.categoryType))
+                        continuation.resume(returning: (task.size, task.url, task.categoryType, true))
                         return
                     }
                     // trashItem 失败且不可回退时，跳过该文件
                     if task.categoryType == .trash || permanentlyDelete {
-                        continuation.resume(returning: (0, task.url, task.categoryType))
+                        continuation.resume(returning: (0, task.url, task.categoryType, false))
                         return
                     }
                     // trashItem 失败时回退到直接删除
                     do {
                         try FileManager.default.removeItem(at: task.url)
                         AppLogger.info("cleanTask: trashItem failed, fallback to removeItem: \(task.url.lastPathComponent)", log: .disk)
-                        continuation.resume(returning: (task.size, task.url, task.categoryType))
+                        continuation.resume(returning: (task.size, task.url, task.categoryType, true))
                     } catch {
-                        continuation.resume(returning: (0, task.url, task.categoryType))
+                        continuation.resume(returning: (0, task.url, task.categoryType, false))
                     }
                 }
             }
@@ -587,59 +867,99 @@ class DiskScanner: ObservableObject {
         excludedPaths: [String] = [],
         permanentlyDelete: Bool = false
     ) async -> UInt64 {
-        // 防止并发清理：如果已有清理任务在进行，直接返回
-        if isCleaning {
+        let scanResultsSnapshot = await MainActor.run { () -> [ScanCategory]? in
+            // 防止并发清理：如果已有清理任务在进行，直接返回
+            if isCleaning {
+                return nil
+            }
+            isCleaning = true
+            cleanProgress = 0.0
+            return scanResults
+        }
+        guard let scanResultsSnapshot else {
             AppLogger.info("Clean already in progress, skipping duplicate request", log: .disk)
             return 0
         }
         isCancelled = false
         isCleanCancelled = false
-        self.excludedPaths = excludedPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+        let normalizedExcludedPaths = excludedPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
+        self.excludedPaths = normalizedExcludedPaths
 
-        // 在主线程上直接从 live scanResults 构建任务列表（不拍快照）
-        // 这样边扫描边清理时，刚扫完的分类文件也会包含进来
-        let built = await MainActor.run { () -> (tasks: [(url: URL, size: UInt64, categoryType: ScanCategoryType)], index: [URL: (file: ScanFileItem, categoryType: ScanCategoryType)]) in
-            isCleaning = true
-            cleanProgress = 0.0
-
-            let categoriesToClean = scanResults.filter { selected.contains($0.categoryType) && $0.categoryType.isCleanable }
-
-            var tasks: [(url: URL, size: UInt64, categoryType: ScanCategoryType)] = []
-            var categoryFileURLs: Set<URL> = []
-            var fileIndex: [URL: (file: ScanFileItem, categoryType: ScanCategoryType)] = [:]
-
-            for category in scanResults {
-                for file in category.files {
-                    fileIndex[file.url] = (file, category.categoryType)
-                }
+        let isExcluded: (String) -> Bool = { path in
+            let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+            return normalizedExcludedPaths.contains { excludedPath in
+                normalizedPath == excludedPath || normalizedPath.hasPrefix(excludedPath + "/")
             }
-
-            for category in categoriesToClean {
-                for file in category.files {
-                    categoryFileURLs.insert(file.url)
-                    if excludedFiles.contains(file.url) || file.isProtected || isPathExcluded(file.url.path) { continue }
-                    tasks.append((file.url, file.size, category.categoryType))
-                }
-            }
-
-            // 单独勾选的文件（不在已选分类中）
-            for url in selectedFiles.subtracting(categoryFileURLs) {
-                if isPathExcluded(url.path) || isProtectedPath(url.path) { continue }
-                if let indexed = fileIndex[url] {
-                    if indexed.file.isProtected { continue }
-                    tasks.append((url, indexed.file.size, indexed.categoryType))
-                } else {
-                    let resourceValues = try? url.resourceValues(forKeys: [.fileSizeKey])
-                    let size = UInt64(resourceValues?.fileSize ?? 0)
-                    tasks.append((url, size, .largeFiles))
-                }
-            }
-
-            return (tasks, fileIndex)
         }
 
-        let tasks = built.tasks
-        let totalFiles = tasks.count
+        let isProtected: (String) -> Bool = { [home] path in
+            if path.hasPrefix(home) {
+                return false
+            }
+            let systemPrefixes = ["/Library", "/System", "/private/var"]
+            return systemPrefixes.contains { path.hasPrefix($0) }
+        }
+
+        // 大量文件时任务构建本身会很重，必须在后台完成，避免阻塞确认弹窗关闭和进度条绘制。
+        let cleansTrashCategory = selected.contains(.trash)
+        let categoriesToClean = scanResultsSnapshot.filter {
+            selected.contains($0.categoryType) && $0.categoryType.isCleanable && $0.categoryType != .trash
+        }
+
+        var trashExcludedURLs: Set<URL> = []
+        if cleansTrashCategory,
+           let trashCategory = scanResultsSnapshot.first(where: { $0.categoryType == .trash }) {
+            for file in trashCategory.files where excludedFiles.contains(file.url) {
+                trashExcludedURLs.insert(file.url.standardizedFileURL)
+            }
+        }
+
+        var tasks: [(url: URL, size: UInt64, categoryType: ScanCategoryType)] = []
+        var categoryFileURLs = selectedFiles.isEmpty ? nil : Set<URL>()
+        var fileIndex: [URL: (file: ScanFileItem, categoryType: ScanCategoryType)] = [:]
+
+        if !selectedFiles.isEmpty {
+            for category in scanResultsSnapshot {
+                for file in category.files {
+                    fileIndex[file.url.standardizedFileURL] = (file, category.categoryType)
+                }
+            }
+        }
+
+        for category in categoriesToClean {
+            for file in category.files {
+                categoryFileURLs?.insert(file.url)
+                if excludedFiles.contains(file.url) || file.isProtected || isExcluded(file.url.path) { continue }
+                tasks.append((file.url, file.size, category.categoryType))
+            }
+        }
+
+        // 单独勾选的文件（不在已选分类中）；废纸篓分类整类清理走 emptyTrash，此处只处理单独勾选
+        let trashRootPaths = Set(trashRootURLs().map { $0.standardizedFileURL.path })
+        for url in selectedFiles.subtracting(categoryFileURLs ?? []) {
+            let normalizedURL = url.standardizedFileURL
+            if isExcluded(normalizedURL.path) || isProtected(normalizedURL.path) { continue }
+            if cleansTrashCategory, trashRootPaths.contains(where: { normalizedURL.path.hasPrefix($0 + "/") || normalizedURL.deletingLastPathComponent().path == $0 }) {
+                continue
+            }
+            if let indexed = fileIndex[normalizedURL] {
+                if indexed.file.isProtected { continue }
+                tasks.append((normalizedURL, indexed.file.size, indexed.categoryType))
+            } else {
+                let resourceValues = try? normalizedURL.resourceValues(forKeys: [.fileSizeKey])
+                let size = UInt64(resourceValues?.fileSize ?? 0)
+                let categoryType: ScanCategoryType = trashRootPaths.contains(where: { normalizedURL.path.hasPrefix($0 + "/") })
+                    ? .trash
+                    : .largeFiles
+                tasks.append((normalizedURL, size, categoryType))
+            }
+        }
+
+        let trashItemCount = cleansTrashCategory
+            ? countTrashItemsToClean(excluding: trashExcludedURLs)
+            : 0
+
+        let totalFiles = tasks.count + trashItemCount
 
         if totalFiles == 0 {
             await MainActor.run {
@@ -649,57 +969,80 @@ class DiskScanner: ObservableObject {
             return 0
         }
 
-        let cleaned: (UInt64, Set<URL>, [URL: ScanCategoryType]) = await withTaskGroup(of: (UInt64, URL, ScanCategoryType).self) { group in
-            var iterator = tasks.makeIterator()
-            var submitted = 0
+        let taskCount = tasks.count
+        var cleanedSize: UInt64 = 0
+        var cleanedURLs: Set<URL> = []
+        var cleanedCategoriesByURL: [URL: ScanCategoryType] = [:]
+        var completedCount = 0
 
-            func submitNext() {
-                guard !isCleanCancelled, let task = iterator.next() else { return }
-                submitted += 1
-                group.addTask { [weak self] in
-                    await self?.cleanTask(task, permanentlyDelete: permanentlyDelete) ?? (0, task.url, task.categoryType)
-                }
-            }
+        if taskCount > 0 {
+            let cleaned: (UInt64, Set<URL>, [URL: ScanCategoryType]) = await withTaskGroup(of: (UInt64, URL, ScanCategoryType, Bool).self) { group in
+                var iterator = tasks.makeIterator()
+                var submitted = 0
 
-            for _ in 0..<min(Constants.Scan.maxConcurrentCleanTasks, totalFiles) {
-                submitNext()
-            }
-
-            var cleanedSize: UInt64 = 0
-            var cleanedURLs: Set<URL> = []
-            var cleanedCategoriesByURL: [URL: ScanCategoryType] = [:]
-            var count = 0
-            var lastProgressUpdate = Date.distantPast
-            for await (size, url, categoryType) in group {
-                if isCleanCancelled {
-                    // 取消后不再记录结果，并终止取剩余结果
-                    group.cancelAll()
-                    break
-                }
-                if size > 0 {
-                    cleanedSize += size
-                    cleanedURLs.insert(url)
-                    cleanedCategoriesByURL[url] = categoryType
-                }
-                count += 1
-                let now = Date()
-                if count == totalFiles ||
-                   now.timeIntervalSince(lastProgressUpdate) >= Constants.Scan.batchTimeThreshold * 0.167 {
-                    lastProgressUpdate = now
-                    let c = count
-                    let t = totalFiles
-                    await MainActor.run {
-                        cleanProgress = t > 0 ? Double(c) / Double(t) : 0
+                func submitNext() {
+                    guard !isCleanCancelled, let task = iterator.next() else { return }
+                    submitted += 1
+                    group.addTask { [weak self] in
+                        await self?.cleanTask(task, permanentlyDelete: permanentlyDelete) ?? (0, task.url, task.categoryType, false)
                     }
                 }
-                if submitted < totalFiles {
+
+                for _ in 0..<min(Constants.Scan.maxConcurrentCleanTasks, taskCount) {
                     submitNext()
                 }
+
+                var groupCleanedSize: UInt64 = 0
+                var groupCleanedURLs: Set<URL> = []
+                var groupCleanedCategoriesByURL: [URL: ScanCategoryType] = [:]
+                var count = 0
+                var lastProgressUpdate = Date.distantPast
+                for await (size, url, categoryType, didClean) in group {
+                    if isCleanCancelled {
+                        group.cancelAll()
+                        break
+                    }
+                    if didClean {
+                        groupCleanedSize += size
+                        groupCleanedURLs.insert(url)
+                        groupCleanedCategoriesByURL[url] = categoryType
+                    }
+                    count += 1
+                    let now = Date()
+                    if count == taskCount || now.timeIntervalSince(lastProgressUpdate) >= 0.1 {
+                        lastProgressUpdate = now
+                        let progressCount = count
+                        await MainActor.run {
+                            cleanProgress = totalFiles > 0 ? Double(progressCount) / Double(totalFiles) : 0
+                        }
+                    }
+                    if submitted < taskCount {
+                        submitNext()
+                    }
+                }
+                return (groupCleanedSize, groupCleanedURLs, groupCleanedCategoriesByURL)
             }
-            return (cleanedSize, cleanedURLs, cleanedCategoriesByURL)
+
+            cleanedSize += cleaned.0
+            cleanedURLs.formUnion(cleaned.1)
+            for (url, type) in cleaned.2 {
+                cleanedCategoriesByURL[url] = type
+            }
+            completedCount += taskCount
         }
 
-        let (cleanedSize, cleanedURLs, cleanedCategoriesByURL) = cleaned
+        if cleansTrashCategory && !isCleanCancelled {
+            let (trashFreed, trashRemoved) = await emptyTrash(excluding: trashExcludedURLs)
+            cleanedSize += trashFreed
+            cleanedURLs.formUnion(trashRemoved)
+            for url in trashRemoved {
+                cleanedCategoriesByURL[url] = .trash
+            }
+            completedCount += trashRemoved.count
+            await MainActor.run {
+                cleanProgress = totalFiles > 0 ? Double(completedCount) / Double(totalFiles) : 1.0
+            }
+        }
         if !isCleanCancelled && !cleanedCategoriesByURL.isEmpty {
             let activeTypes = await MainActor.run { activeCategoryTypes }
             let immediateCleanup = cleanedCategoriesByURL.filter { !activeTypes.contains($0.value) }
@@ -717,20 +1060,30 @@ class DiskScanner: ObservableObject {
         }
 
         let urls = cleanedURLs
+        let currentScanResults = await MainActor.run { scanResults }
+        let updatedScanResults = currentScanResults.map { category in
+            var updated = category
+            if !isCleanCancelled {
+                if category.categoryType == .trash && cleansTrashCategory {
+                    updated.files.removeAll { file in
+                        !trashExcludedURLs.contains(file.url.standardizedFileURL)
+                    }
+                } else {
+                    updated.files.removeAll { urls.contains($0.url) }
+                }
+                updated.fileCount = updated.files.count
+                updated.totalSize = updated.files.reduce(0) { $0 + $1.size }
+            }
+            return updated
+        }
+        let updatedTotalCleanableSize = cleanableSize(in: updatedScanResults)
+
         await MainActor.run {
             isCleaning = false
             cleanProgress = 0.0
             cleanedFileURLs.formUnion(urls)
-            scanResults = scanResults.map { category in
-                var updated = category
-                if !isCleanCancelled {
-                    updated.files.removeAll { urls.contains($0.url) }
-                    updated.fileCount = updated.files.count
-                    updated.totalSize = updated.files.reduce(0) { $0 + $1.size }
-                }
-                return updated
-            }
-            totalCleanableSize = cleanableSize(in: scanResults)
+            scanResults = updatedScanResults
+            totalCleanableSize = updatedTotalCleanableSize
         }
 
         return cleanedSize

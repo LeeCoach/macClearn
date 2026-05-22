@@ -23,6 +23,8 @@ struct UninstallerView: View {
     @State private var selectedBatchResidualFiles: Set<URL> = []
     @State private var displayMode: UninstallerMode = .installedApps
     @State private var isPreparingResiduals = false
+    @State private var toastMessage: String?
+    @State private var toastDismissTask: Task<Void, Never>?
 
     // 根据搜索文本过滤应用列表
     private var displayedApps: [InstalledApp] {
@@ -102,6 +104,11 @@ struct UninstallerView: View {
                 }
             }
         }
+        .onChange(of: viewModel.uninstallSuccessMessage) { message in
+            guard let message, !message.isEmpty else { return }
+            showToast(message)
+            viewModel.uninstallSuccessMessage = nil
+        }
         .sheet(item: $selectedAppForDetail) { app in
             appDetailSheet(for: app)
         }
@@ -116,6 +123,19 @@ struct UninstallerView: View {
         .sheet(isPresented: $showOrphanCleanSheet) {
             orphanCleanSheet
         }
+        .alert(
+            localization.text("uninstaller.error.title"),
+            isPresented: Binding(
+                get: { viewModel.uninstallErrorMessage != nil },
+                set: { if !$0 { viewModel.uninstallErrorMessage = nil } }
+            )
+        ) {
+            Button(localization.text("common.close")) {
+                viewModel.uninstallErrorMessage = nil
+            }
+        } message: {
+            Text(viewModel.uninstallErrorMessage ?? "")
+        }
         .overlay {
             if viewModel.isUninstalling {
                 uninstallingOverlay
@@ -123,6 +143,15 @@ struct UninstallerView: View {
                 preparingOverlay
             }
         }
+        .overlay(alignment: .top) {
+            if let toastMessage {
+                toastView(message: toastMessage)
+                    .padding(.top, 18)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(1)
+            }
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: toastMessage)
     }
 
     private var headerBar: some View {
@@ -617,6 +646,36 @@ struct UninstallerView: View {
             .padding(22)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private func toastView(message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text(message)
+                .font(.subheadline)
+                .fontWeight(.medium)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.16), radius: 10, x: 0, y: 4)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func showToast(_ message: String) {
+        toastDismissTask?.cancel()
+        toastMessage = message
+        toastDismissTask = Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation {
+                    toastMessage = nil
+                }
+            }
         }
     }
 

@@ -42,9 +42,9 @@ enum ScanCategoryType: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// 该分类是否可一键清理（大文件需用户手动确认）
+    /// 该分类是否可清理
     var isCleanable: Bool {
-        self != .largeFiles
+        true
     }
 }
 
@@ -89,8 +89,24 @@ struct ScanFileItem: Identifiable, Codable {
     let url: URL
     let size: UInt64
     let isProtected: Bool
+    let isDirectory: Bool
 
     private enum CodingKeys: String, CodingKey {
-        case url, size, isProtected
+        case url, size, isProtected, isDirectory
+    }
+
+    init(url: URL, size: UInt64, isProtected: Bool, isDirectory: Bool = false) {
+        self.url = url
+        self.size = size
+        self.isProtected = isProtected
+        self.isDirectory = isDirectory
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = try container.decode(URL.self, forKey: .url)
+        size = try container.decode(UInt64.self, forKey: .size)
+        isProtected = try container.decode(Bool.self, forKey: .isProtected)
+        isDirectory = try container.decodeIfPresent(Bool.self, forKey: .isDirectory) ?? false
     }
 }

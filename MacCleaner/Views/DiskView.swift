@@ -24,6 +24,7 @@ struct DiskView: View {
     @State private var showCleanConfirmation: Bool = false
     @State private var showExcludedPaths: Bool = false
     @State private var permanentlyDelete = false
+    @State private var isPreparingClean = false
 
     // 当前是否正在扫描或清理
     private var isBusy: Bool {
@@ -35,7 +36,7 @@ struct DiskView: View {
         selectedCategories.filter { $0.isCleanable }
     }
 
-    // 总共选中的文件数（分类全选 + 单独勾选的文件）
+    // 总共选中的项目数（分类全选 + 单独勾选的项目）
     private var totalSelectedFileCount: Int {
         let fromCategories = scanner.scanResults
             .filter { selectedCleanableCategories.contains($0.categoryType) }
@@ -78,9 +79,7 @@ struct DiskView: View {
         return localization.text("disk.lastScan", date.formatted(date: .abbreviated, time: .shortened))
     }
 
-    private var hasVisibleResults: Bool {
-        scanner.scanResults.contains { $0.fileCount > 0 }
-    }
+    private var hasVisibleResults: Bool { !scanner.scanResults.isEmpty }
 
     // 是否可以执行清理
     private var canClean: Bool {
@@ -97,6 +96,8 @@ struct DiskView: View {
 
             if scanner.isCleaning {
                 cleanProgressBar
+            } else if isPreparingClean {
+                cleanPreparingBar
             }
 
             if showCleaningResult {
@@ -136,6 +137,11 @@ struct DiskView: View {
                     }
                 }
                 scanner.objectWillChange.send()
+            }
+        }
+        .onChange(of: scanner.isCleaning) { cleaning in
+            if cleaning {
+                isPreparingClean = false
             }
         }
     }
@@ -279,6 +285,21 @@ struct DiskView: View {
         .padding(.bottom, 12)
     }
 
+    private var cleanPreparingBar: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+
+            Text(localization.text("disk.cleanPreparing"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+    }
+
     // 清理结果卡片，展示实际磁盘可用空间变化
     private var cleaningResultCard: some View {
         let cleanableAfter = cleanableBefore > cleanedSize ? cleanableBefore - cleanedSize : 0
@@ -402,42 +423,40 @@ struct DiskView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(scanner.scanResults) { category in
-                    if category.fileCount > 0 {
-                        DisclosureGroup(isExpanded: Binding<Bool>(
-                            get: { expandedCategories.contains(category.categoryType) },
-                            set: { isExpanded in
-                                if isExpanded {
-                                    expandedCategories.insert(category.categoryType)
-                                } else {
-                                    expandedCategories.remove(category.categoryType)
-                                }
+                    DisclosureGroup(isExpanded: Binding<Bool>(
+                        get: { expandedCategories.contains(category.categoryType) },
+                        set: { isExpanded in
+                            if isExpanded {
+                                expandedCategories.insert(category.categoryType)
+                            } else {
+                                expandedCategories.remove(category.categoryType)
                             }
-                        )) {
-                            LazyVStack(spacing: 0) {
-                                ForEach(category.displayFiles) { file in
-                                    fileRow(file, categoryType: category.categoryType)
-                                        .padding(.horizontal, 12)
-                                    Divider()
-                                        .padding(.leading, 42)
-                                }
-
-                                if category.files.count > 500 {
-                                    Text(localization.text("disk.moreFiles", category.files.count - 500))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.leading, 42)
-                                        .padding(.vertical, 4)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                            }
-                        } label: {
-                            categoryLabel(category)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
+                    )) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(category.displayFiles) { file in
+                                fileRow(file, categoryType: category.categoryType)
+                                    .padding(.horizontal, 12)
+                                Divider()
+                                    .padding(.leading, 42)
+                            }
 
-                        Divider()
+                            if category.files.count > 500 {
+                                Text(localization.text("disk.moreFiles", category.files.count - 500))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 42)
+                                    .padding(.vertical, 4)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    } label: {
+                        categoryLabel(category)
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+
+                    Divider()
                 }
             }
         }
@@ -448,26 +467,19 @@ struct DiskView: View {
         let isBeingCleaned = scanner.isCleaning && selectedCategories.contains(category.categoryType)
 
         return HStack(spacing: 12) {
-            if category.categoryType.isCleanable {
-                Button(action: {
-                    if selectedCategories.contains(category.categoryType) {
-                        selectedCategories.remove(category.categoryType)
-                    } else {
-                        selectedCategories.insert(category.categoryType)
-                    }
-                }) {
-                    Image(systemName: selectedCategories.contains(category.categoryType) ? "checkmark.square.fill" : "square")
-                        .font(.title3)
-                        .foregroundStyle(selectedCategories.contains(category.categoryType) ? Color.accentColor : .secondary)
+            Button(action: {
+                if selectedCategories.contains(category.categoryType) {
+                    selectedCategories.remove(category.categoryType)
+                } else {
+                    selectedCategories.insert(category.categoryType)
                 }
-                .buttonStyle(.plain)
-                .disabled(isBeingCleaned)
-            } else {
-                Image(systemName: "eye")
+            }) {
+                Image(systemName: selectedCategories.contains(category.categoryType) ? "checkmark.square.fill" : "square")
                     .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .help(localization.text("disk.largeFiles.help"))
+                    .foregroundStyle(selectedCategories.contains(category.categoryType) ? Color.accentColor : .secondary)
             }
+            .buttonStyle(.plain)
+            .disabled(isBeingCleaned || category.fileCount == 0)
 
             Image(systemName: category.icon)
                 .font(.title2)
@@ -509,16 +521,6 @@ struct DiskView: View {
             Spacer()
 
             if category.totalSize > 0 {
-                if !category.categoryType.isCleanable {
-                    Text(localization.text("disk.viewOnly"))
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.secondary.opacity(0.12))
-                        .foregroundStyle(.secondary)
-                        .clipShape(Capsule())
-                }
-
                 Text(ByteFormatter.shared.format(category.totalSize))
                     .font(.body)
                     .fontWeight(.semibold)
@@ -530,27 +532,25 @@ struct DiskView: View {
         .opacity(isBeingCleaned ? 0.4 : 1.0)
     }
 
-    // 单个文件行，展示选择框、文件名、路径、受保护标记、大小和定位按钮
+    // 单个项目行，展示选择框、名称、路径、受保护标记、大小和定位按钮
     private func fileRow(_ file: ScanFileItem, categoryType: ScanCategoryType) -> some View {
         let isCategorySelected = selectedCleanableCategories.contains(categoryType)
         let isSelected = isCategorySelected ? !excludedSelectedFiles.contains(file.url) : selectedFiles.contains(file.url)
         let isBeingCleaned = scanner.isCleaning && isSelected
 
         return HStack(spacing: 8) {
-            if categoryType.isCleanable {
-                Button(action: {
-                    toggleFileSelection(file.url, categoryType: categoryType)
-                }) {
-                    Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                        .font(.system(size: 14))
-                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                }
-                .buttonStyle(.plain)
-                .disabled(isBeingCleaned)
+            Button(action: {
+                toggleFileSelection(file.url, categoryType: categoryType)
+            }) {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 14))
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             }
+            .buttonStyle(.plain)
+            .disabled(isBeingCleaned)
 
             HStack(spacing: 8) {
-                Image(systemName: "doc")
+                Image(systemName: file.isDirectory ? "folder" : "doc")
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
 
@@ -583,7 +583,7 @@ struct DiskView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture {
-                guard categoryType.isCleanable, !isBeingCleaned else { return }
+                guard !isBeingCleaned else { return }
                 toggleFileSelection(file.url, categoryType: categoryType)
             }
 
@@ -711,6 +711,7 @@ struct DiskView: View {
 
                 Button {
                     showCleanConfirmation = false
+                    isPreparingClean = true
                     performClean()
                 } label: {
                     Label(
@@ -764,27 +765,33 @@ struct DiskView: View {
         let filesToRemove = selectedFiles
         let filesToExclude = excludedSelectedFiles
         let excluded = permissionManager.excludedPaths
+        let shouldPermanentlyDelete = permanentlyDelete || cleanedTrashOnly
         Task.detached(priority: .userInitiated) {
             let size = await self.scanner.cleanCategories(
                 categoriesToRemove,
                 selectedFiles: filesToRemove,
                 excludedFiles: filesToExclude,
                 excludedPaths: excluded,
-                permanentlyDelete: self.permanentlyDelete
+                permanentlyDelete: shouldPermanentlyDelete
             )
             await MainActor.run {
+                self.isPreparingClean = false
                 self.cleanedSize = size
                 self.selectedCategories.removeAll()
                 self.selectedFiles.removeAll()
                 self.excludedSelectedFiles.removeAll()
                 self.showCleaningResult = true
 
-                // 如果被清理的分类有截断标记，清理后重新扫描该分类以获取准确数据
-                let truncatedCleaned = self.scanner.scanResults.filter {
-                    categoriesToRemove.contains($0.categoryType) && $0.isTruncated
+                // 清理废纸篓或截断分类后重新扫描以同步列表
+                var typesToRescan = Set(
+                    self.scanner.scanResults
+                        .filter { categoriesToRemove.contains($0.categoryType) && $0.isTruncated }
+                        .map(\.categoryType)
+                )
+                if categoriesToRemove.contains(.trash) {
+                    typesToRescan.insert(.trash)
                 }
-                if !truncatedCleaned.isEmpty {
-                    let typesToRescan = Set(truncatedCleaned.map(\.categoryType))
+                if !typesToRescan.isEmpty {
                     Task {
                         await self.scanner.rescanCategories(typesToRescan, excludedPaths: excluded)
                     }
